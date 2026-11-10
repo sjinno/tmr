@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Timer {
     pub name: String,
+    #[serde(default)]
+    pub memo: String,
     pub seconds: u64,
     #[serde(default)]
     pub uses: u64,
@@ -28,6 +30,7 @@ impl Timer {
     pub fn new(name: String, seconds: u64) -> Self {
         Self {
             name,
+            memo: String::new(),
             seconds,
             uses: 0,
             favorite: false,

@@ -37,6 +37,9 @@ In the timer form, use `Tab` to switch fields, `Backspace` to erase,
 `Enter` to save, and `Esc` to cancel. New timers start with an empty duration.
 Saving a new timer starts its countdown immediately.
 Names are optional; unnamed timers display a duration-based label like `01:30 timer`.
+Each timer also has an optional memo (up to 80 characters). Use `Tab` to move
+between name, duration, and memo; `Shift-Tab` moves backward. Memos are saved
+with the timer and shown in the list and countdown panel. Press `e` to edit them.
 Enter durations with units: `1h`, `6m 10s`, `100s`, or `1h30m`.
 Units are case-insensitive; spaces between values and units are optional.
 Use whole numbers with a positive total, up to 999 hours.

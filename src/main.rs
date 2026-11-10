@@ -26,7 +26,8 @@ enum Mode {
         edit: bool,
         name: String,
         duration: String,
-        field: bool,
+        memo: String,
+        field: usize,
         error: String,
     },
     Delete,
@@ -59,23 +60,30 @@ impl App {
                 edit,
                 name,
                 duration,
+                memo,
                 field,
                 error,
             } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
-                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => *field = !*field,
+                KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % 3,
+                KeyCode::BackTab | KeyCode::Up => *field = (*field + 2) % 3,
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    let text = if *field { duration } else { name };
+                    let text = match *field {
+                        0 => name,
+                        1 => duration,
+                        _ => memo,
+                    };
                     if text.chars().count() < 80 {
                         text.push(c);
                     }
                 }
                 KeyCode::Backspace => {
-                    if *field {
-                        duration.pop();
-                    } else {
-                        name.pop();
+                    match *field {
+                        0 => name,
+                        1 => duration,
+                        _ => memo,
                     }
+                    .pop();
                 }
                 KeyCode::Enter => match parse_duration(duration) {
                     Err(e) => *error = e,
@@ -83,11 +91,13 @@ impl App {
                         if *edit {
                             let t = &mut self.timers[self.selected];
                             t.name = name.trim().to_string();
+                            t.memo = memo.trim().to_string();
                             t.seconds = seconds;
                             t.reset();
                             self.status = "Timer saved. Space to start.".into();
                         } else {
                             let mut timer = Timer::new(name.trim().to_string(), seconds);
+                            timer.memo = memo.trim().to_string();
                             timer.toggle(Instant::now());
                             self.timers.push(timer);
                             self.selected = self.timers.len() - 1;
@@ -117,7 +127,8 @@ impl App {
                         edit: false,
                         name: String::new(),
                         duration: String::new(),
-                        field: false,
+                        memo: String::new(),
+                        field: 0,
                         error: String::new(),
                     }
                 }
@@ -156,7 +167,8 @@ impl App {
                                 edit: true,
                                 name: t.name.clone(),
                                 duration: format!("{}s", t.seconds),
-                                field: false,
+                                memo: t.memo.clone(),
+                                field: 0,
                                 error: String::new(),
                             }
                         }
@@ -257,7 +269,14 @@ impl App {
                         ),
                         Style::default().fg(if t.finished { ACCENT } else { MUTED }),
                     )),
-                    Line::from(""),
+                    Line::from(Span::styled(
+                        if t.memo.is_empty() {
+                            String::new()
+                        } else {
+                            format!("      {}", t.memo)
+                        },
+                        Style::default().fg(MUTED),
+                    )),
                 ])
             })
             .collect();
@@ -292,12 +311,19 @@ impl App {
             if let Some(t) = self.timers.get(self.selected) {
                 let spacious = inside.height >= 20;
                 let gap = if spacious { 2 } else { 1 };
+                let memo_height = if t.memo.is_empty() {
+                    0
+                } else {
+                    let width = usize::from(inside.width.saturating_sub(4)).max(1);
+                    (Text::from(t.memo.as_str()).width().div_ceil(width) as u16 + 2).min(5)
+                };
                 let parts = Layout::vertical([
                     Constraint::Length(if spacious { 2 } else { 1 }),
                     Constraint::Min(1),
                     Constraint::Length(gap),
                     Constraint::Length(1),
                     Constraint::Length(gap),
+                    Constraint::Length(memo_height),
                     Constraint::Length(if spacious { 2 } else { 0 }),
                 ])
                 .margin(1)
@@ -306,6 +332,18 @@ impl App {
                     Paragraph::new(t.label()).style(Style::default().fg(ACCENT).bold()),
                     parts[0],
                 );
+                if memo_height > 0 {
+                    f.render_widget(
+                        Paragraph::new(t.memo.as_str())
+                            .wrap(Wrap { trim: true })
+                            .block(
+                                Block::bordered()
+                                    .title(" MEMO ")
+                                    .border_style(Style::default().fg(MUTED)),
+                            ),
+                        parts[5],
+                    );
+                }
                 block_clock::render(f, parts[1], &clock(t.left(now)), Color::Reset);
                 let ratio = (1.0 - t.left(now).as_secs_f64() / t.seconds as f64).clamp(0.0, 1.0);
                 f.render_widget(
@@ -328,7 +366,7 @@ impl App {
                         t.uses
                     ))
                     .style(Style::default().fg(MUTED)),
-                    parts[5],
+                    parts[6],
                 );
             }
         }
@@ -345,27 +383,41 @@ impl App {
                 edit,
                 name,
                 duration,
+                memo,
                 field,
                 error,
             } => {
-                let popup = popup(area, 66, 12);
+                let popup = popup(area, 66, 16);
                 f.render_widget(Clear, popup);
                 let text = vec![
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
                             " {} Name (optional)  {}",
-                            if !field { "›" } else { " " },
+                            if *field == 0 { "›" } else { " " },
                             name
                         ),
-                        Style::default().fg(if !field { ACCENT } else { Color::White }),
+                        Style::default().fg(if *field == 0 { ACCENT } else { Color::White }),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
-                        format!(" {} Duration  {}", if *field { "›" } else { " " }, duration),
-                        Style::default().fg(if *field { ACCENT } else { Color::White }),
+                        format!(
+                            " {} Duration  {}",
+                            if *field == 1 { "›" } else { " " },
+                            duration
+                        ),
+                        Style::default().fg(if *field == 1 { ACCENT } else { Color::White }),
                     )),
                     Line::from("   e.g. 1h / 6m 10s / 100s / 1h30m"),
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        format!(
+                            " {} Memo (optional)  {}",
+                            if *field == 2 { "›" } else { " " },
+                            memo
+                        ),
+                        Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
+                    )),
                     Line::from(""),
                     Line::from(Span::styled(
                         error.as_str(),
@@ -475,6 +527,54 @@ fn main() -> io::Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn memo_can_be_created_edited_and_cleared() {
+        let path = std::env::temp_dir().join(format!(
+            "tmr-memo-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = App {
+            timers: vec![],
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: path.clone(),
+            list: ListState::default(),
+        };
+        let press = |app: &mut App, code| {
+            app.key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        press(&mut app, KeyCode::Char('n'));
+        press(&mut app, KeyCode::Tab);
+        for c in "10s".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Tab);
+        for c in "Tea 🫖".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(storage::load(&path).unwrap()[0].memo, "Tea 🫖");
+        assert!(app.timers[0].started.is_some());
+        press(&mut app, KeyCode::Char('e'));
+        // Moving backward from Name reaches Memo.
+        press(&mut app, KeyCode::BackTab);
+        press(&mut app, KeyCode::Char('!'));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.timers[0].memo, "Tea 🫖");
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::BackTab);
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Backspace);
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(storage::load(&path).unwrap()[0].memo.is_empty());
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn renders_empty_full_and_small_layouts() {
         use ratatui::{Terminal, backend::TestBackend};
         let mut app = App {
@@ -496,11 +596,20 @@ mod tests {
             .collect();
         assert!(text.contains("Nothing on the clock"));
         app.timers.push(Timer::new("Focus".into(), 1500));
+        app.timers[0].memo = "Take a break afterward".into();
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let right_panel: String = (4..26)
+            .flat_map(|y| (34..99).map(move |x| buffer[(x, y)].symbol()))
+            .collect();
+        assert!(right_panel.contains("MEMO"));
+        assert!(right_panel.contains("Take a break afterward"));
         app.mode = Mode::Form {
             edit: true,
             name: "Focus".into(),
             duration: "25:00".into(),
-            field: true,
+            memo: "Take a short break afterward".into(),
+            field: 1,
             error: String::new(),
         };
         terminal.draw(|f| app.draw(f)).unwrap();
