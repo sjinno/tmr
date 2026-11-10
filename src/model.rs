@@ -16,6 +16,8 @@ pub struct Timer {
     #[serde(skip)]
     pub started: Option<Instant>,
     #[serde(skip)]
+    pub started_at: Option<time::OffsetDateTime>,
+    #[serde(skip)]
     pub finished: bool,
 }
 
@@ -36,6 +38,7 @@ impl Timer {
             favorite: false,
             remaining: Duration::from_secs(seconds),
             started: None,
+            started_at: None,
             finished: false,
         }
     }
@@ -47,6 +50,7 @@ impl Timer {
     pub fn reset(&mut self) {
         self.remaining = Duration::from_secs(self.seconds);
         self.started = None;
+        self.started_at = None;
         self.finished = false;
     }
     pub fn toggle(&mut self, now: Instant) {
@@ -57,7 +61,8 @@ impl Timer {
             if self.finished || self.remaining.is_zero() {
                 self.reset();
             }
-            if self.remaining == Duration::from_secs(self.seconds) {
+            if self.started_at.is_none() {
+                self.started_at = Some(time::OffsetDateTime::now_utc());
                 self.uses = self.uses.saturating_add(1);
             }
             self.started = Some(now);

@@ -369,7 +369,9 @@ impl App {
                     Constraint::Length(1),
                     Constraint::Length(gap),
                     Constraint::Length(memo_height),
-                    Constraint::Length(if spacious { 2 } else { 0 }),
+                    Constraint::Length(
+                        u16::from(t.started_at.is_some()) + if spacious { 2 } else { 0 },
+                    ),
                 ])
                 .margin(1)
                 .split(inside);
@@ -404,13 +406,28 @@ impl App {
                         }),
                     parts[3],
                 );
+                let mut details = Vec::new();
+                if let Some(utc) = t.started_at {
+                    let (started_at, zone) = match time::UtcOffset::local_offset_at(utc) {
+                        Ok(offset) => (utc.to_offset(offset), ""),
+                        Err(_) => (utc, " UTC"),
+                    };
+                    details.push(Line::from(format!(
+                        "Started at  {:02}:{:02}:{:02}{zone}",
+                        started_at.hour(),
+                        started_at.minute(),
+                        started_at.second(),
+                    )));
+                }
+                if spacious {
+                    details.push(Line::from(format!(
+                        "Duration    {}",
+                        clock(Duration::from_secs(t.seconds))
+                    )));
+                    details.push(Line::from(format!("Started     {} times", t.uses)));
+                }
                 f.render_widget(
-                    Paragraph::new(format!(
-                        "Duration  {}\nStarted   {} times",
-                        clock(Duration::from_secs(t.seconds)),
-                        t.uses
-                    ))
-                    .style(Style::default().fg(MUTED)),
+                    Paragraph::new(details).style(Style::default().fg(MUTED)),
                     parts[6],
                 );
             }
