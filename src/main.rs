@@ -1,4 +1,6 @@
 mod alarm;
+#[cfg(target_os = "macos")]
+mod awake;
 mod block_clock;
 mod model;
 mod storage;
@@ -570,6 +572,8 @@ fn main() -> io::Result<()> {
         list: ListState::default(),
     };
     let mut alarm = alarm::Alarm::default();
+    #[cfg(target_os = "macos")]
+    let mut awake = awake::Awake::default();
     ratatui::run(|terminal| -> io::Result<()> {
         loop {
             if alarm.poll().is_err() {
@@ -595,6 +599,10 @@ fn main() -> io::Result<()> {
                     app.status
                         .push_str(" · Audio unavailable; used terminal bell.");
                 }
+            }
+            #[cfg(target_os = "macos")]
+            if let Err(e) = awake.update(app.timers.iter().any(|timer| timer.started.is_some())) {
+                app.status = format!("Could not keep Mac awake: {e}");
             }
             terminal.draw(|f| app.draw(f))?;
             if event::poll(Duration::from_millis(100))?
