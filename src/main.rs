@@ -22,6 +22,10 @@ const BG: Color = Color::Reset;
 
 enum Mode {
     Browse,
+    Jump {
+        number: String,
+        error: String,
+    },
     Form {
         edit: bool,
         name: String,
@@ -56,6 +60,37 @@ impl App {
             return self.persist();
         }
         match &mut self.mode {
+            Mode::Jump { number, error } => match key.code {
+                KeyCode::Esc => self.mode = Mode::Browse,
+                KeyCode::Char(c) if c.is_ascii_digit() => {
+                    if number.len() < 20 {
+                        number.push(c);
+                    }
+                    error.clear();
+                }
+                KeyCode::Backspace => {
+                    number.pop();
+                    error.clear();
+                }
+                KeyCode::Enter => {
+                    match number
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|&n| n > 0 && n <= self.timers.len())
+                    {
+                        Some(n) => {
+                            self.selected = n - 1;
+                            self.status = format!("Selected timer #{n}. Space to start / pause.");
+                            self.mode = Mode::Browse;
+                        }
+                        None => {
+                            *error =
+                                format!("Enter a timer number from 1 to {}.", self.timers.len())
+                        }
+                    }
+                }
+                _ => {}
+            },
             Mode::Form {
                 edit,
                 name,
@@ -121,6 +156,16 @@ impl App {
                 _ => {}
             },
             Mode::Browse => match key.code {
+                KeyCode::Char('/') => {
+                    if self.timers.is_empty() {
+                        self.status = "No timers yet. Press n to create one.".into();
+                    } else {
+                        self.mode = Mode::Jump {
+                            number: String::new(),
+                            error: String::new(),
+                        };
+                    }
+                }
                 KeyCode::Char('q') => return self.persist(),
                 KeyCode::Char('n') => {
                     self.mode = Mode::Form {
@@ -376,9 +421,32 @@ impl App {
                 .wrap(Wrap { trim: true }),
             rows[2],
         );
-        f.render_widget(Paragraph::new("n new   Space start/pause   r reset   e edit   d delete\n↑/↓ select   f favorite   J/K rank   s sort by use   q quit").style(Style::default().fg(MUTED)), rows[3]);
+        f.render_widget(Paragraph::new("n new   Space start/pause   r reset   e edit   d delete\n↑/↓ select   / jump   f favorite   J/K rank   s sort   q quit").style(Style::default().fg(MUTED)), rows[3]);
         match &self.mode {
             Mode::Browse => {}
+            Mode::Jump { number, error } => {
+                let popup = popup(area, 58, 7);
+                f.render_widget(Clear, popup);
+                f.render_widget(
+                    Paragraph::new(vec![
+                        Line::from(format!("/{number}▏")),
+                        Line::from("Use the number shown in the timer list."),
+                        Line::from(Span::styled(
+                            error.as_str(),
+                            Style::default().fg(Color::LightRed),
+                        )),
+                        Line::from("Enter jump · Backspace erase · Esc cancel"),
+                    ])
+                    .wrap(Wrap { trim: true })
+                    .block(
+                        Block::bordered()
+                            .title(" JUMP TO TIMER ")
+                            .border_style(Style::default().fg(ACCENT)),
+                    )
+                    .style(Style::default().bg(BG)),
+                    popup,
+                );
+            }
             Mode::Form {
                 edit,
                 name,
@@ -526,6 +594,40 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn jump_selects_multi_digit_numbers_without_starting_timers() {
+        let mut app = App {
+            timers: (1..=12)
+                .map(|n| Timer::new(format!("Timer {n}"), 60))
+                .collect(),
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: PathBuf::new(),
+            list: ListState::default(),
+        };
+        let press = |app: &mut App, code| {
+            app.key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        press(&mut app, KeyCode::Char('/'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(&app.mode, Mode::Jump { error, .. } if !error.is_empty()));
+        press(&mut app, KeyCode::Backspace);
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.selected, 11);
+        assert!(matches!(app.mode, Mode::Browse));
+        assert!(app.timers.iter().all(|t| t.started.is_none()));
+        press(&mut app, KeyCode::Char('/'));
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.selected, 11);
+        app.timers.clear();
+        press(&mut app, KeyCode::Char('/'));
+        assert!(matches!(app.mode, Mode::Browse));
+    }
     #[test]
     fn memo_can_be_created_edited_and_cleared() {
         let path = std::env::temp_dir().join(format!(

@@ -24,6 +24,7 @@ tmr
 | --- | --- |
 | `n` | Create a timer |
 | `↑` / `↓` or `k` / `j` | Select a timer |
+| `/` then number, `Enter` | Jump to a timer by its displayed list number; `Esc` cancels |
 | `Space` / `Enter` | Start, pause, resume, or reuse a completed timer |
 | `r` | Reset the selected timer |
 | `e` | Edit its name and duration; saving resets its countdown |
