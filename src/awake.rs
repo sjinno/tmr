@@ -1,34 +1,43 @@
 use std::{
     io,
     process::{self, Child, Command, Stdio},
+    time::{Duration, Instant},
 };
 
 #[derive(Default)]
 pub struct Awake {
-    running: bool,
+    retry_after: Option<Instant>,
     child: Option<Child>,
 }
 
 impl Awake {
     pub fn update(&mut self, running: bool) -> io::Result<()> {
-        let was_running = std::mem::replace(&mut self.running, running);
         if !running {
             self.release();
-        } else if !was_running {
-            self.child = Some(
-                Command::new("/usr/bin/caffeinate")
-                    .args(["-i", "-w", &process::id().to_string()])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()?,
-            );
-        } else if let Some(child) = &mut self.child
-            && child.try_wait()?.is_some()
-        {
-            self.child = None;
-            return Err(io::Error::other("caffeinate exited"));
+            self.retry_after = None;
+            return Ok(());
         }
+        if let Some(child) = &mut self.child {
+            if child.try_wait()?.is_none() {
+                return Ok(());
+            }
+            self.child = None;
+            return Err(io::Error::other("caffeinate exited; retrying shortly"));
+        }
+        let now = Instant::now();
+        if self.retry_after.is_some_and(|retry| now < retry) {
+            return Ok(());
+        }
+        // Throttle retries if the helper cannot start or repeatedly exits.
+        self.retry_after = Some(now + Duration::from_secs(5));
+        self.child = Some(
+            Command::new("/usr/bin/caffeinate")
+                .args(["-di", "-w", &process::id().to_string()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?,
+        );
         Ok(())
     }
 

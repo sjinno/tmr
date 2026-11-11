@@ -9,7 +9,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use model::{Timer, clock, parse_duration};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::{
     io::{self, Write},
@@ -293,7 +293,7 @@ impl App {
                 let state = if t.finished {
                     "DONE"
                 } else if t.started.is_some() {
-                    "RUN "
+                    "RUN"
                 } else if t.remaining < Duration::from_secs(t.seconds) {
                     "PAUSE"
                 } else {
@@ -307,15 +307,23 @@ impl App {
                         ),
                         Span::styled(t.label(), Style::default().bold()),
                     ]),
-                    Line::from(Span::styled(
-                        format!(
-                            "      {}  {:5}  ·  {} uses",
-                            clock(t.left(now)),
-                            state,
-                            t.uses
+                    Line::from(vec![
+                        Span::raw(format!("      {}  ", clock(t.left(now)))),
+                        Span::styled(
+                            format!("{state:5}"),
+                            if t.started.is_some() {
+                                Style::default().fg(ACCENT).bold()
+                            } else {
+                                Style::default()
+                            },
                         ),
-                        Style::default().fg(if t.finished { ACCENT } else { MUTED }),
-                    )),
+                        Span::raw(format!("  ·  {} uses", t.uses)),
+                    ])
+                    .style(Style::default().fg(if t.finished {
+                        ACCENT
+                    } else {
+                        MUTED
+                    })),
                     Line::from(Span::styled(
                         if t.memo.is_empty() {
                             String::new()
@@ -355,7 +363,78 @@ impl App {
                 .border_style(Style::default().fg(MUTED));
             let inside = panel.inner(columns[1]);
             f.render_widget(panel, columns[1]);
-            if let Some(t) = self.timers.get(self.selected) {
+            if running > 1 {
+                let [summary, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)])
+                    .horizontal_margin(1)
+                    .areas(inside);
+                let active: Vec<_> = self
+                    .timers
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, timer)| timer.started.is_some())
+                    .collect();
+                const BOX_HEIGHT: u16 = 5;
+                const BOX_STRIDE: u16 = BOX_HEIGHT + 1;
+                let capacity = usize::from((list.height.saturating_add(1) / BOX_STRIDE).max(1));
+                let selected = active.iter().position(|(index, _)| *index == self.selected);
+                let first = selected.unwrap_or(0) / capacity * capacity;
+                let end = (first + capacity).min(running);
+                let heading = if end - first < running {
+                    format!("{running} running · showing {}–{end}", first + 1)
+                } else {
+                    format!("{running} running")
+                };
+                f.render_widget(
+                    Paragraph::new(heading).style(Style::default().fg(MUTED)),
+                    summary,
+                );
+                for (row, &(index, timer)) in active[first..end].iter().enumerate() {
+                    let bounds = Rect::new(
+                        list.x,
+                        list.y + row as u16 * BOX_STRIDE,
+                        list.width,
+                        BOX_HEIGHT.min(list.height),
+                    );
+                    let border = if index == self.selected {
+                        ACCENT
+                    } else {
+                        MUTED
+                    };
+                    let card = Block::bordered()
+                        .title(Line::styled(
+                            format!(" #{:02} {} ", index + 1, timer.label()),
+                            Style::default().bold(),
+                        ))
+                        .border_style(Style::default().fg(border))
+                        .padding(Padding::horizontal(1));
+                    let gauge_width = usize::from(card.inner(bounds).width);
+                    let remaining = timer.left(now);
+                    let mut metadata =
+                        format!("duration: {}", clock(Duration::from_secs(timer.seconds)));
+                    if let Some(utc) = timer.started_at {
+                        metadata.push_str(&format!(", started_at: {}", format_start_time(utc)));
+                    }
+                    let progress =
+                        (1.0 - remaining.as_secs_f64() / timer.seconds as f64).clamp(0.0, 1.0);
+                    let filled = (progress * gauge_width as f64).round() as usize;
+                    let gauge = Line::from(vec![
+                        Span::styled("━".repeat(filled), Style::default().fg(ACCENT)),
+                        Span::styled(
+                            "─".repeat(gauge_width - filled),
+                            Style::default().fg(MUTED).dim(),
+                        ),
+                    ]);
+                    f.render_widget(
+                        Paragraph::new(vec![
+                            Line::styled(metadata, Style::default().fg(MUTED)),
+                            Line::styled(clock(remaining), Style::default().fg(ACCENT).bold()),
+                            gauge,
+                        ])
+                        .block(card),
+                        bounds,
+                    );
+                }
+            } else if let Some(t) = self.timers.get(self.selected) {
                 let spacious = inside.height >= 20;
                 let gap = if spacious { 2 } else { 1 };
                 let memo_height = if t.memo.is_empty() {
@@ -410,15 +489,9 @@ impl App {
                 );
                 let mut details = Vec::new();
                 if let Some(utc) = t.started_at {
-                    let (started_at, zone) = match time::UtcOffset::local_offset_at(utc) {
-                        Ok(offset) => (utc.to_offset(offset), ""),
-                        Err(_) => (utc, " UTC"),
-                    };
                     details.push(Line::from(format!(
-                        "Started at  {:02}:{:02}:{:02}{zone}",
-                        started_at.hour(),
-                        started_at.minute(),
-                        started_at.second(),
+                        "Started at  {}",
+                        format_start_time(utc)
                     )));
                 }
                 if spacious {
@@ -549,6 +622,14 @@ impl App {
         }
     }
 }
+fn format_start_time(utc: time::OffsetDateTime) -> String {
+    let (started_at, zone) = match time::UtcOffset::local_offset_at(utc) {
+        Ok(offset) => (utc.to_offset(offset), ""),
+        Err(_) => (utc, " UTC"),
+    };
+    format!("{:02}:{:02}{zone}", started_at.hour(), started_at.minute(),)
+}
+
 fn popup(area: Rect, width: u16, height: u16) -> Rect {
     let w = width.min(area.width);
     let h = height.min(area.height);
