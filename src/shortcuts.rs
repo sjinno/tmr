@@ -16,6 +16,7 @@ pub const TIMERS: &[(&str, &str)] = &[
     ("q", "quit"),
     ("r", "reset"),
     ("s", "sort by use"),
+    (",", "settings"),
     ("/", "jump"),
     ("↑/↓", "select"),
     ("space", "start/pause"),
@@ -26,6 +27,7 @@ pub const CLOCKS: &[(&str, &str)] = &[
     ("n", "add"),
     ("q", "quit"),
     ("t", "timers"),
+    (",", "settings"),
     ("←/→", "select"),
     ("alt+←/→", "reorder"),
 ];

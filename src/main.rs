@@ -3,6 +3,7 @@ mod alarm;
 mod awake;
 mod block_clock;
 mod model;
+mod settings;
 mod shortcuts;
 mod storage;
 mod theme;
@@ -28,6 +29,11 @@ use theme::{ACCENT, BG, MINT, MUTED};
 
 enum Mode {
     Browse,
+    Settings {
+        duration: String,
+        error: String,
+        clocks: bool,
+    },
     Clocks,
     Choose {
         stopwatch: bool,
@@ -50,6 +56,7 @@ enum Mode {
 struct App {
     timers: Vec<Timer>,
     clocks: world_clock::WorldClocks,
+    settings: settings::Settings,
     selected: usize,
     mode: Mode,
     status: String,
@@ -60,7 +67,10 @@ impl App {
     fn persist(&mut self) -> bool {
         match storage::save(&self.path, &self.timers)
             .and_then(|()| self.clocks.save(&self.path.with_extension("clocks.json")))
-        {
+            .and_then(|()| {
+                self.settings
+                    .save(&self.path.with_extension("settings.json"))
+            }) {
             Ok(()) => true,
             Err(e) => {
                 self.status =
@@ -72,6 +82,21 @@ impl App {
     fn key(&mut self, key: KeyEvent) -> bool {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return self.persist();
+        }
+        if key.code == KeyCode::Char(',')
+            && (matches!(self.mode, Mode::Browse)
+                || (matches!(self.mode, Mode::Clocks) && self.clocks.browsing()))
+        {
+            self.mode = Mode::Settings {
+                duration: self
+                    .settings
+                    .alarm_seconds
+                    .map(|seconds| format!("{seconds}s"))
+                    .unwrap_or_default(),
+                error: String::new(),
+                clocks: matches!(self.mode, Mode::Clocks),
+            };
+            return false;
         }
         if matches!(self.mode, Mode::Clocks) {
             if self.clocks.browsing() {
@@ -90,6 +115,40 @@ impl App {
             return false;
         }
         match &mut self.mode {
+            Mode::Settings {
+                duration,
+                error,
+                clocks,
+            } => match key.code {
+                KeyCode::Esc => self.mode = if *clocks { Mode::Clocks } else { Mode::Browse },
+                KeyCode::Backspace => {
+                    duration.pop();
+                    error.clear();
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if duration.len() < 80 {
+                        duration.push(c);
+                    }
+                }
+                KeyCode::Enter => {
+                    let parsed = if duration.trim().is_empty() {
+                        Ok(None)
+                    } else {
+                        parse_duration(duration).map(Some)
+                    };
+                    match parsed {
+                        Err(e) => *error = e,
+                        Ok(seconds) => {
+                            self.settings.alarm_seconds = seconds;
+                            self.settings.dirty = true;
+                            self.mode = if *clocks { Mode::Clocks } else { Mode::Browse };
+                            self.status = "alarm duration saved.".into();
+                            self.persist();
+                        }
+                    }
+                }
+                _ => {}
+            },
             Mode::Clocks => unreachable!(),
             Mode::Choose { stopwatch } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
@@ -631,6 +690,31 @@ impl App {
         );
         shortcuts::render(f, rows[3], shortcuts::TIMERS, 2);
         match &self.mode {
+            Mode::Settings {
+                duration, error, ..
+            } => {
+                let bounds = popup(area, 64, 11);
+                f.render_widget(Clear, bounds);
+                f.render_widget(
+                    Paragraph::new(vec![
+                        Line::from(""),
+                        Line::styled(
+                            format!("alarm duration  {duration}▏"),
+                            Style::default().fg(ACCENT),
+                        ),
+                        Line::from("e.g. 5s / 30s / 1m · blank plays the sound once"),
+                        Line::from("repeats or trims the sound to the selected duration"),
+                        Line::from("applies to timer and stopwatch alerts"),
+                        Line::from(""),
+                        Line::styled(error.as_str(), Style::default().fg(Color::LightRed)),
+                        Line::from("enter save · esc cancel / silence alarm"),
+                    ])
+                    .wrap(Wrap { trim: true })
+                    .block(theme::panel(" settings "))
+                    .style(Style::default().bg(BG)),
+                    bounds,
+                );
+            }
             Mode::Clocks => unreachable!(),
             Mode::Choose { stopwatch } => {
                 let popup = popup(area, 50, 6);
@@ -806,6 +890,7 @@ fn main() -> io::Result<()> {
     let mut app = App {
         timers,
         clocks: world_clock::WorldClocks::load(&path.with_extension("clocks.json"))?,
+        settings: settings::Settings::load(&path.with_extension("settings.json"))?,
         selected: 0,
         mode: Mode::Browse,
         status: String::new(),
@@ -842,7 +927,7 @@ fn main() -> io::Result<()> {
             }
             if !completed.is_empty() {
                 app.status = completed.join(", ");
-                if alarm.play().is_err() {
+                if alarm.play(app.settings.alarm_seconds).is_err() {
                     print!("\x07");
                     io::stdout().flush()?;
                     app.status
@@ -857,9 +942,13 @@ fn main() -> io::Result<()> {
             if event::poll(Duration::from_millis(100))?
                 && let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
-                && app.key(key)
             {
-                return Ok(());
+                if key.code == KeyCode::Esc {
+                    alarm.stop();
+                }
+                if app.key(key) {
+                    return Ok(());
+                }
             }
         }
     })
@@ -868,6 +957,53 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn alarm_settings_save_and_return_to_clocks() {
+        let path = std::env::temp_dir().join(format!(
+            "tmr-settings-ui-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = App {
+            timers: vec![],
+            clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
+            selected: 0,
+            mode: Mode::Clocks,
+            status: String::new(),
+            path: path.clone(),
+            list: ListState::default(),
+        };
+        let press = |app: &mut App, code| {
+            app.key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        press(&mut app, KeyCode::Char(','));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(&app.mode, Mode::Settings { error, .. } if !error.is_empty()));
+        press(&mut app, KeyCode::Backspace);
+        for c in "5s".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.mode, Mode::Clocks));
+        assert_eq!(
+            settings::Settings::load(&path.with_extension("settings.json"))
+                .unwrap()
+                .alarm_seconds,
+            Some(5)
+        );
+        press(&mut app, KeyCode::Char(','));
+        press(&mut app, KeyCode::Backspace);
+        press(&mut app, KeyCode::Backspace);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.settings.alarm_seconds, None);
+        std::fs::remove_file(path.with_extension("settings.json")).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn alt_arrows_reorder_and_keep_selection_with_timer() {
         let path = std::env::temp_dir().join(format!(
@@ -881,6 +1017,7 @@ mod tests {
         let mut app = App {
             timers: vec![Timer::new("a".into(), 10), Timer::new("b".into(), 20)],
             clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),
@@ -915,6 +1052,7 @@ mod tests {
         let mut app = App {
             timers: vec![],
             clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),
@@ -960,6 +1098,7 @@ mod tests {
     fn jump_selects_multi_digit_numbers_without_starting_timers() {
         let mut app = App {
             clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
             timers: (1..=12)
                 .map(|n| Timer::new(format!("Timer {n}"), 60))
                 .collect(),
@@ -1004,6 +1143,7 @@ mod tests {
         let mut app = App {
             timers: vec![],
             clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),
@@ -1047,6 +1187,7 @@ mod tests {
         let mut app = App {
             timers: vec![],
             clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),

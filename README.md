@@ -116,6 +116,14 @@ brings its page into view, and digits shrink to fit.
 
 ## alarms and keeping awake
 
+Press `,` on either page to open settings. Set **alarm duration** to `5s`,
+`30s`, or another duration to repeat the sound for that long, trimming playback
+when the duration ends. Leave it blank to play the sound once (the default).
+The setting applies to timer completions and stopwatch interval alerts.
+Press `Esc` to silence an alarm. Overlapping alerts share the current playback
+and its original deadline. Settings are saved beside your timer data in
+`timers.settings.json` by default.
+
 Timer completion and stopwatch interval alerts play the bundled rooster sound
 in `assets/alarm.mp3`. Playback uses macOS's built-in `afplay`; other platforms
 need `ffplay` on PATH. If playback fails, the app uses a terminal bell instead.
