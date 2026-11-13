@@ -22,7 +22,7 @@ tmr
 
 | Key | Action |
 | --- | --- |
-| `n` | Create a timer |
+| `n` | Choose Timer or Stopwatch, then create it |
 | `↑` / `↓` or `k` / `j` | Select a timer |
 | `/` then number, `Enter` | Jump to a timer by its displayed list number; `Esc` cancels |
 | `Space` / `Enter` | Start, pause, resume, or reuse a completed timer |
@@ -37,6 +37,13 @@ tmr
 In the timer form, use `Tab` to switch fields, `Backspace` to erase,
 `Enter` to save, and `Esc` to cancel. New timers start with an empty duration.
 Saving a new timer starts its countdown immediately.
+For a stopwatch, set **Alert every** to a duration such as `5m` or `30s`,
+or leave it blank for no alerts. Stopwatches start counting up immediately.
+Space pauses or resumes, and `r` resets elapsed time to zero. Interval alerts
+use active elapsed time, excluding pauses, and play the same alarm sound.
+If several intervals pass between updates, one alert covers them. The gauge
+shows progress toward the next alert. Stopwatch presets and intervals are
+saved, and elapsed time starts fresh when you reopen the app.
 Names are optional; unnamed timers display a duration-based label like `01:30 timer`.
 Each timer also has an optional memo (up to 80 characters). Use `Tab` to move
 between name, duration, and memo; `Shift-Tab` moves backward. Memos are saved

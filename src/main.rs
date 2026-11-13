@@ -6,7 +6,7 @@ mod model;
 mod storage;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use model::{Timer, clock, parse_duration};
+use model::{Timer, parse_duration};
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Padding, Paragraph, Wrap},
@@ -24,12 +24,16 @@ const BG: Color = Color::Reset;
 
 enum Mode {
     Browse,
+    Choose {
+        stopwatch: bool,
+    },
     Jump {
         number: String,
         error: String,
     },
     Form {
         edit: bool,
+        stopwatch: bool,
         name: String,
         duration: String,
         memo: String,
@@ -62,6 +66,26 @@ impl App {
             return self.persist();
         }
         match &mut self.mode {
+            Mode::Choose { stopwatch } => match key.code {
+                KeyCode::Esc => self.mode = Mode::Browse,
+                KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::BackTab => {
+                    *stopwatch = !*stopwatch
+                }
+                KeyCode::Char('t') => *stopwatch = false,
+                KeyCode::Char('s') => *stopwatch = true,
+                KeyCode::Enter => {
+                    self.mode = Mode::Form {
+                        edit: false,
+                        stopwatch: *stopwatch,
+                        name: String::new(),
+                        duration: String::new(),
+                        memo: String::new(),
+                        field: 0,
+                        error: String::new(),
+                    }
+                }
+                _ => {}
+            },
             Mode::Jump { number, error } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
                 KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -95,6 +119,7 @@ impl App {
             },
             Mode::Form {
                 edit,
+                stopwatch,
                 name,
                 duration,
                 memo,
@@ -122,7 +147,11 @@ impl App {
                     }
                     .pop();
                 }
-                KeyCode::Enter => match parse_duration(duration) {
+                KeyCode::Enter => match if *stopwatch && duration.trim().is_empty() {
+                    Ok(0)
+                } else {
+                    parse_duration(duration)
+                } {
                     Err(e) => *error = e,
                     Ok(seconds) => {
                         if *edit {
@@ -130,15 +159,18 @@ impl App {
                             t.name = name.trim().to_string();
                             t.memo = memo.trim().to_string();
                             t.seconds = seconds;
+                            t.stopwatch = *stopwatch;
                             t.reset();
-                            self.status = "Timer saved. Space to start.".into();
+                            self.status = "Saved. Space to start.".into();
                         } else {
                             let mut timer = Timer::new(name.trim().to_string(), seconds);
+                            timer.stopwatch = *stopwatch;
+                            timer.reset();
                             timer.memo = memo.trim().to_string();
                             timer.toggle(Instant::now());
                             self.timers.push(timer);
                             self.selected = self.timers.len() - 1;
-                            self.status = "Timer created and running. Space to pause.".into();
+                            self.status = "Created and running. Space to pause.".into();
                         }
                         self.mode = Mode::Browse;
                         self.persist();
@@ -169,16 +201,7 @@ impl App {
                     }
                 }
                 KeyCode::Char('q') => return self.persist(),
-                KeyCode::Char('n') => {
-                    self.mode = Mode::Form {
-                        edit: false,
-                        name: String::new(),
-                        duration: String::new(),
-                        memo: String::new(),
-                        field: 0,
-                        error: String::new(),
-                    }
-                }
+                KeyCode::Char('n') => self.mode = Mode::Choose { stopwatch: false },
                 KeyCode::Down | KeyCode::Char('j') => {
                     if !self.timers.is_empty() {
                         self.selected = (self.selected + 1) % self.timers.len();
@@ -212,8 +235,13 @@ impl App {
                         KeyCode::Char('e') => {
                             self.mode = Mode::Form {
                                 edit: true,
+                                stopwatch: t.stopwatch,
                                 name: t.name.clone(),
-                                duration: format!("{}s", t.seconds),
+                                duration: if t.stopwatch && t.seconds == 0 {
+                                    String::new()
+                                } else {
+                                    format!("{}s", t.seconds)
+                                },
                                 memo: t.memo.clone(),
                                 field: 0,
                                 error: String::new(),
@@ -294,7 +322,7 @@ impl App {
                     "DONE"
                 } else if t.started.is_some() {
                     "RUN"
-                } else if t.remaining < Duration::from_secs(t.seconds) {
+                } else if t.started_at.is_some() {
                     "PAUSE"
                 } else {
                     "READY"
@@ -308,7 +336,7 @@ impl App {
                         Span::styled(t.label(), Style::default().bold()),
                     ]),
                     Line::from(vec![
-                        Span::raw(format!("      {}  ", clock(t.left(now)))),
+                        Span::raw(format!("      {}  ", t.display(now))),
                         Span::styled(
                             format!("{state:5}"),
                             if t.started.is_some() {
@@ -408,14 +436,11 @@ impl App {
                         .border_style(Style::default().fg(border))
                         .padding(Padding::horizontal(1));
                     let gauge_width = usize::from(card.inner(bounds).width);
-                    let remaining = timer.left(now);
-                    let mut metadata =
-                        format!("duration: {}", clock(Duration::from_secs(timer.seconds)));
+                    let mut metadata = timer.setting();
                     if let Some(utc) = timer.started_at {
                         metadata.push_str(&format!(", started_at: {}", format_start_time(utc)));
                     }
-                    let progress =
-                        (1.0 - remaining.as_secs_f64() / timer.seconds as f64).clamp(0.0, 1.0);
+                    let progress = timer.progress(now);
                     let filled = (progress * gauge_width as f64).round() as usize;
                     let gauge = Line::from(vec![
                         Span::styled("━".repeat(filled), Style::default().fg(ACCENT)),
@@ -427,7 +452,7 @@ impl App {
                     f.render_widget(
                         Paragraph::new(vec![
                             Line::styled(metadata, Style::default().fg(MUTED)),
-                            Line::styled(clock(remaining), Style::default().fg(ACCENT).bold()),
+                            Line::styled(timer.display(now), Style::default().fg(ACCENT).bold()),
                             gauge,
                         ])
                         .block(card),
@@ -451,7 +476,8 @@ impl App {
                     Constraint::Length(gap),
                     Constraint::Length(memo_height),
                     Constraint::Length(
-                        u16::from(t.started_at.is_some()) + if spacious { 2 } else { 0 },
+                        u16::from(t.started_at.is_some())
+                            + if spacious { 2 } else { u16::from(t.stopwatch) },
                     ),
                 ])
                 .margin(1)
@@ -472,8 +498,8 @@ impl App {
                         parts[5],
                     );
                 }
-                block_clock::render(f, parts[1], &clock(t.left(now)), Color::Reset);
-                let ratio = (1.0 - t.left(now).as_secs_f64() / t.seconds as f64).clamp(0.0, 1.0);
+                block_clock::render(f, parts[1], &t.display(now), Color::Reset);
+                let ratio = t.progress(now);
                 f.render_widget(
                     Gauge::default()
                         .gauge_style(Style::default().fg(ACCENT).bg(HIGHLIGHT))
@@ -494,11 +520,10 @@ impl App {
                         format_start_time(utc)
                     )));
                 }
+                if spacious || t.stopwatch {
+                    details.push(Line::from(t.setting()));
+                }
                 if spacious {
-                    details.push(Line::from(format!(
-                        "Duration    {}",
-                        clock(Duration::from_secs(t.seconds))
-                    )));
                     details.push(Line::from(format!("Started     {} times", t.uses)));
                 }
                 f.render_widget(
@@ -515,6 +540,31 @@ impl App {
         );
         f.render_widget(Paragraph::new("n new   Space start/pause   r reset   e edit   d delete\n↑/↓ select   / jump   f favorite   J/K rank   s sort   q quit").style(Style::default().fg(MUTED)), rows[3]);
         match &self.mode {
+            Mode::Choose { stopwatch } => {
+                let popup = popup(area, 50, 8);
+                f.render_widget(Clear, popup);
+                f.render_widget(
+                    Paragraph::new(vec![
+                        Line::from(Span::styled(
+                            format!("{} Timer · count down", if !stopwatch { "›" } else { " " }),
+                            Style::default().fg(if !stopwatch { ACCENT } else { MUTED }),
+                        )),
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            format!(
+                                "{} Stopwatch · count up",
+                                if *stopwatch { "›" } else { " " }
+                            ),
+                            Style::default().fg(if *stopwatch { ACCENT } else { MUTED }),
+                        )),
+                        Line::from(""),
+                        Line::from("↑/↓ choose · Enter continue · Esc cancel"),
+                    ])
+                    .block(Block::bordered().title(" CREATE "))
+                    .style(Style::default().bg(BG)),
+                    popup,
+                );
+            }
             Mode::Browse => {}
             Mode::Jump { number, error } => {
                 let popup = popup(area, 58, 7);
@@ -541,6 +591,7 @@ impl App {
             }
             Mode::Form {
                 edit,
+                stopwatch,
                 name,
                 duration,
                 memo,
@@ -562,13 +613,22 @@ impl App {
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
-                            " {} Duration  {}",
+                            " {} {}  {}",
                             if *field == 1 { "›" } else { " " },
+                            if *stopwatch {
+                                "Alert every"
+                            } else {
+                                "Duration"
+                            },
                             duration
                         ),
                         Style::default().fg(if *field == 1 { ACCENT } else { Color::White }),
                     )),
-                    Line::from("   e.g. 1h / 6m 10s / 100s / 1h30m"),
+                    Line::from(if *stopwatch {
+                        "   e.g. 5m / 30s · blank disables alerts"
+                    } else {
+                        "   e.g. 1h / 6m 10s / 100s / 1h30m"
+                    }),
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
@@ -590,7 +650,13 @@ impl App {
                         .wrap(Wrap { trim: false })
                         .block(
                             Block::bordered()
-                                .title(if *edit {
+                                .title(if *stopwatch {
+                                    if *edit {
+                                        " EDIT STOPWATCH · saving resets elapsed time "
+                                    } else {
+                                        " NEW STOPWATCH "
+                                    }
+                                } else if *edit {
                                     " EDIT TIMER · saves reset the countdown "
                                 } else {
                                     " NEW TIMER "
@@ -666,14 +732,15 @@ fn main() -> io::Result<()> {
             let mut completed = Vec::new();
             for t in &mut app.timers {
                 if t.tick(now) {
-                    completed.push(t.label());
+                    completed.push(if t.stopwatch {
+                        format!("{} · interval alert at {}", t.label(), t.display(now))
+                    } else {
+                        format!("{} · finished", t.label())
+                    });
                 }
             }
             if !completed.is_empty() {
-                app.status = format!(
-                    "Finished: {} · r to reset, Space to run again",
-                    completed.join(", ")
-                );
+                app.status = completed.join(", ");
                 if alarm.play().is_err() {
                     print!("\x07");
                     io::stdout().flush()?;
@@ -700,6 +767,59 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stopwatch_creation_and_editing() {
+        let path = std::env::temp_dir().join(format!(
+            "tmr-stopwatch-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = App {
+            timers: vec![],
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: path.clone(),
+            list: ListState::default(),
+        };
+        let press = |app: &mut App, code| {
+            app.key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        press(&mut app, KeyCode::Char('n'));
+        assert!(matches!(app.mode, Mode::Choose { .. }));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(
+            app.mode,
+            Mode::Form {
+                stopwatch: true,
+                ..
+            }
+        ));
+        press(&mut app, KeyCode::Tab);
+        for c in "30s".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(app.timers[0].stopwatch);
+        assert_eq!(app.timers[0].seconds, 30);
+        assert!(app.timers[0].started.is_some());
+        assert_eq!(app.timers[0].display(Instant::now()), "00:00");
+        press(&mut app, KeyCode::Char('e'));
+        press(&mut app, KeyCode::Tab);
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Backspace);
+        }
+        press(&mut app, KeyCode::Enter);
+        let saved = storage::load(&path).unwrap();
+        assert!(saved[0].stopwatch);
+        assert_eq!(saved[0].seconds, 0);
+        assert!(saved[0].started.is_none());
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn jump_selects_multi_digit_numbers_without_starting_timers() {
         let mut app = App {
@@ -756,6 +876,7 @@ mod tests {
             app.key(KeyEvent::new(code, KeyModifiers::NONE));
         };
         press(&mut app, KeyCode::Char('n'));
+        press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Tab);
         for c in "10s".chars() {
             press(&mut app, KeyCode::Char(c));
@@ -814,6 +935,7 @@ mod tests {
         assert!(right_panel.contains("Take a break afterward"));
         app.mode = Mode::Form {
             edit: true,
+            stopwatch: false,
             name: "Focus".into(),
             duration: "25:00".into(),
             memo: "Take a short break afterward".into(),

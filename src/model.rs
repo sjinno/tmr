@@ -6,7 +6,12 @@ pub struct Timer {
     pub name: String,
     #[serde(default)]
     pub memo: String,
+    // Duration for timers, repeating alert interval for stopwatches (0 disables alerts).
     pub seconds: u64,
+    #[serde(default)]
+    pub stopwatch: bool,
+    #[serde(skip)]
+    alerted_intervals: u64,
     #[serde(default)]
     pub uses: u64,
     #[serde(default)]
@@ -23,7 +28,9 @@ pub struct Timer {
 
 impl Timer {
     pub fn label(&self) -> String {
-        if self.name.trim().is_empty() {
+        if self.name.trim().is_empty() && self.stopwatch {
+            "Stopwatch".into()
+        } else if self.name.trim().is_empty() {
             format!("{} timer", clock(Duration::from_secs(self.seconds)))
         } else {
             self.name.clone()
@@ -34,6 +41,8 @@ impl Timer {
             name,
             memo: String::new(),
             seconds,
+            stopwatch: false,
+            alerted_intervals: 0,
             uses: 0,
             favorite: false,
             remaining: Duration::from_secs(seconds),
@@ -44,11 +53,52 @@ impl Timer {
     }
     pub fn left(&self, now: Instant) -> Duration {
         self.started.map_or(self.remaining, |start| {
-            self.remaining.saturating_sub(now.duration_since(start))
+            let elapsed = now.duration_since(start);
+            if self.stopwatch {
+                self.remaining.saturating_add(elapsed)
+            } else {
+                self.remaining.saturating_sub(elapsed)
+            }
         })
     }
+    pub fn display(&self, now: Instant) -> String {
+        let value = self.left(now);
+        clock(if self.stopwatch {
+            Duration::from_secs(value.as_secs())
+        } else {
+            value
+        })
+    }
+    pub fn progress(&self, now: Instant) -> f64 {
+        if self.seconds == 0 {
+            return 0.0;
+        }
+        let elapsed = self.left(now).as_secs_f64();
+        if self.stopwatch {
+            (elapsed % self.seconds as f64) / self.seconds as f64
+        } else {
+            (1.0 - elapsed / self.seconds as f64).clamp(0.0, 1.0)
+        }
+    }
+    pub fn setting(&self) -> String {
+        if !self.stopwatch {
+            format!("duration: {}", clock(Duration::from_secs(self.seconds)))
+        } else if self.seconds == 0 {
+            "stopwatch · alerts off".into()
+        } else {
+            format!(
+                "stopwatch · alert every {}",
+                clock(Duration::from_secs(self.seconds))
+            )
+        }
+    }
     pub fn reset(&mut self) {
-        self.remaining = Duration::from_secs(self.seconds);
+        self.remaining = if self.stopwatch {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(self.seconds)
+        };
+        self.alerted_intervals = 0;
         self.started = None;
         self.started_at = None;
         self.finished = false;
@@ -58,7 +108,7 @@ impl Timer {
             self.remaining = self.left(now);
             self.started = None;
         } else {
-            if self.finished || self.remaining.is_zero() {
+            if self.finished || (!self.stopwatch && self.remaining.is_zero()) {
                 self.reset();
             }
             if self.started_at.is_none() {
@@ -69,6 +119,16 @@ impl Timer {
         }
     }
     pub fn tick(&mut self, now: Instant) -> bool {
+        if self.stopwatch {
+            if self.started.is_some() && self.seconds > 0 {
+                let intervals = self.left(now).as_secs() / self.seconds;
+                if intervals > self.alerted_intervals {
+                    self.alerted_intervals = intervals;
+                    return true;
+                }
+            }
+            return false;
+        }
         if self.started.is_some() && self.left(now).is_zero() {
             self.started = None;
             self.remaining = Duration::ZERO;
@@ -156,6 +216,38 @@ pub fn clock(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stopwatch_intervals_follow_active_time() {
+        let now = Instant::now();
+        let mut watch = Timer::new("Stretch".into(), 30);
+        watch.stopwatch = true;
+        watch.reset();
+        watch.toggle(now);
+        assert_eq!(watch.display(now), "00:00");
+        assert!(!watch.tick(now + Duration::from_secs(29)));
+        assert!(watch.tick(now + Duration::from_secs(30)));
+        assert!(!watch.tick(now + Duration::from_secs(30)));
+        watch.toggle(now + Duration::from_secs(35));
+        assert!(!watch.tick(now + Duration::from_secs(100)));
+        watch.toggle(now + Duration::from_secs(100));
+        assert_eq!(watch.display(now + Duration::from_secs(100)), "00:35");
+        assert_eq!(watch.uses, 1);
+        assert!(watch.tick(now + Duration::from_secs(125)));
+        // A delayed frame coalesces missed intervals into one alert.
+        assert!(watch.tick(now + Duration::from_secs(300)));
+        assert!(!watch.tick(now + Duration::from_secs(300)));
+        assert!(watch.started.is_some());
+        assert!(!watch.finished);
+        watch.reset();
+        assert_eq!(watch.display(now), "00:00");
+        watch.toggle(now);
+        assert!(watch.tick(now + Duration::from_secs(30)));
+        watch.seconds = 0;
+        watch.reset();
+        watch.toggle(now);
+        assert!(!watch.tick(now + Duration::from_secs(3600)));
+        assert_eq!(watch.display(now + Duration::from_secs(3600)), "01:00:00");
+    }
     #[test]
     fn durations() {
         for (s, n) in [

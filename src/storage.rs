@@ -20,7 +20,7 @@ pub fn load(path: &Path) -> io::Result<Vec<Timer>> {
     };
     let mut timers: Vec<Timer> = serde_json::from_slice(&data).map_err(io::Error::other)?;
     for timer in &mut timers {
-        if timer.seconds == 0 || timer.seconds > 999 * 3600 {
+        if (!timer.stopwatch && timer.seconds == 0) || timer.seconds > 999 * 3600 {
             return Err(io::Error::other("Invalid saved timer"));
         }
         timer.reset();
@@ -58,7 +58,10 @@ mod tests {
         timer.favorite = true;
         timer.memo = "Steep, then remove the tea bag".into();
         timer.toggle(std::time::Instant::now());
-        save(&path, &[timer]).unwrap();
+        let mut watch = Timer::new("Stopwatch".into(), 0);
+        watch.stopwatch = true;
+        watch.reset();
+        save(&path, &[timer, watch]).unwrap();
         let timers = load(&path).unwrap();
         assert!(timers[0].name.is_empty());
         assert_eq!(timers[0].memo, "Steep, then remove the tea bag");
@@ -67,8 +70,12 @@ mod tests {
         assert!(timers[0].favorite);
         assert!(timers[0].started.is_none());
         assert_eq!(timers[0].remaining.as_secs(), 90);
+        assert!(timers[1].stopwatch);
+        assert_eq!(timers[1].seconds, 0);
+        assert_eq!(timers[1].remaining.as_secs(), 0);
         fs::write(&path, r#"[{"name":"Old timer","seconds":60}]"#).unwrap();
         assert!(load(&path).unwrap()[0].memo.is_empty());
+        assert!(!load(&path).unwrap()[0].stopwatch);
         fs::write(&path, "broken").unwrap();
         assert!(load(&path).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "broken");
