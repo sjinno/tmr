@@ -85,6 +85,17 @@ selecting a tile brings its page into view, and digits shrink to fit.
 
 ## Development
 
+For automatic rebuilds and restarts while editing, run:
+
+```sh
+./dev.sh
+```
+
+This uses `cargo-watch` to watch `src`, `assets`, and `Cargo.toml`. Install it
+once with `cargo install cargo-watch` if needed. Source changes restart the
+app, so active countdowns and stopwatch elapsed time reset. Use `Ctrl-C` to
+stop the watcher after closing the app with `q`.
+
 ```sh
 cargo fmt --check
 cargo test

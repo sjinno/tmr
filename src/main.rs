@@ -5,24 +5,26 @@ mod block_clock;
 mod model;
 mod shortcuts;
 mod storage;
+mod theme;
 mod world_clock;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use model::{Timer, parse_duration};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Clear, Gauge, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{Block, Clear, Gauge, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::{
     io::{self, Write},
     path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
-const ACCENT: Color = Color::Rgb(159, 211, 212);
-const MUTED: Color = Color::Rgb(192, 195, 204);
-const HIGHLIGHT: Color = Color::Rgb(52, 59, 68);
-const BG: Color = Color::Reset;
+use theme::{ACCENT, BG, MINT, MUTED};
 
 enum Mode {
     Browse,
@@ -309,7 +311,7 @@ impl App {
             return;
         }
         let rows = Layout::vertical([
-            Constraint::Length(if area.height < 22 { 2 } else { 3 }),
+            Constraint::Length(if area.height < 22 { 3 } else { 4 }),
             Constraint::Min(5),
             Constraint::Length(if area.height < 22 { 1 } else { 3 }),
             Constraint::Length(shortcuts::height(
@@ -320,25 +322,17 @@ impl App {
         .margin(1)
         .split(area);
         let running = self.timers.iter().filter(|t| t.started.is_some()).count();
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    Span::styled(" tmr ", Style::default().fg(Color::Black).bg(ACCENT).bold()),
-                    Span::styled("  a little room for your time", Style::default().fg(MUTED)),
-                ]),
-                Line::from(format!(
-                    " {} saved  ·  {} running",
-                    self.timers.len(),
-                    running
-                )),
-            ]),
+        theme::header(
+            f,
             rows[0],
+            &format!("{} saved · {} running", self.timers.len(), running),
         );
         let columns = if area.width >= 85 {
             Layout::horizontal([
                 Constraint::Length((area.width / 3).clamp(32, 48)),
                 Constraint::Min(1),
             ])
+            .spacing(1)
             .split(rows[1])
         } else {
             Layout::horizontal([Constraint::Percentage(100), Constraint::Length(0)]).split(rows[1])
@@ -367,11 +361,11 @@ impl App {
                         Span::styled(t.label(), Style::default().bold()),
                     ]),
                     Line::from(vec![
-                        Span::raw(format!("      {}  ", t.display(now))),
+                        Span::raw(format!("  {}  ", t.display(now))),
                         Span::styled(
                             format!("{state:5}"),
                             if t.started.is_some() {
-                                Style::default().fg(ACCENT).bold()
+                                Style::default().fg(MINT).bold()
                             } else {
                                 Style::default()
                             },
@@ -387,7 +381,7 @@ impl App {
                         if t.memo.is_empty() {
                             String::new()
                         } else {
-                            format!("      {}", t.memo)
+                            format!("  {}", t.memo)
                         },
                         Style::default().fg(MUTED),
                     )),
@@ -399,9 +393,8 @@ impl App {
         } else {
             Some(self.selected)
         });
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" TIMERS / your order ")
+        let block = theme::panel(" your timers ")
+            .padding(Padding::new(1, 1, 1, 1))
             .border_style(Style::default().fg(MUTED));
         if self.timers.is_empty() {
             f.render_widget(Paragraph::new("\n  Nothing on the clock.\n\n  Press n to create your first timer.\n  Tea, a deep work session, a quick break…").block(block).wrap(Wrap { trim: false }), columns[0]);
@@ -409,17 +402,14 @@ impl App {
             f.render_stateful_widget(
                 List::new(items)
                     .block(block)
-                    .highlight_style(Style::default().bg(HIGHLIGHT))
+                    .highlight_style(Style::default().fg(ACCENT).bold())
                     .highlight_symbol("▎"),
                 columns[0],
                 &mut self.list,
             );
         }
         if columns[1].width > 0 {
-            let panel = Block::default()
-                .borders(Borders::ALL)
-                .title(" ON THE CLOCK ")
-                .border_style(Style::default().fg(MUTED));
+            let panel = theme::panel(" on the clock ").border_style(Style::default().fg(MUTED));
             let inside = panel.inner(columns[1]);
             f.render_widget(panel, columns[1]);
             if running > 1 {
@@ -432,7 +422,7 @@ impl App {
                     .enumerate()
                     .filter(|(_, timer)| timer.started.is_some())
                     .collect();
-                const BOX_HEIGHT: u16 = 5;
+                const BOX_HEIGHT: u16 = 7;
                 const BOX_STRIDE: u16 = BOX_HEIGHT + 1;
                 let capacity = usize::from((list.height.saturating_add(1) / BOX_STRIDE).max(1));
                 let selected = active.iter().position(|(index, _)| *index == self.selected);
@@ -459,13 +449,13 @@ impl App {
                     } else {
                         MUTED
                     };
-                    let card = Block::bordered()
+                    let card = theme::panel("")
                         .title(Line::styled(
                             format!(" #{:02} {} ", index + 1, timer.label()),
                             Style::default().bold(),
                         ))
                         .border_style(Style::default().fg(border))
-                        .padding(Padding::horizontal(1));
+                        .padding(Padding::new(2, 2, 1, 1));
                     let gauge_width = usize::from(card.inner(bounds).width);
                     let mut metadata = timer.setting();
                     if let Some(utc) = timer.started_at {
@@ -522,8 +512,8 @@ impl App {
                         Paragraph::new(t.memo.as_str())
                             .wrap(Wrap { trim: true })
                             .block(
-                                Block::bordered()
-                                    .title(" MEMO ")
+                                theme::panel("")
+                                    .title(" memo ")
                                     .border_style(Style::default().fg(MUTED)),
                             ),
                         parts[5],
@@ -533,7 +523,7 @@ impl App {
                 let ratio = t.progress(now);
                 f.render_widget(
                     Gauge::default()
-                        .gauge_style(Style::default().fg(ACCENT).bg(HIGHLIGHT))
+                        .gauge_style(Style::default().fg(ACCENT).bg(BG))
                         .ratio(ratio)
                         .label(if t.finished {
                             "Complete"
@@ -591,7 +581,7 @@ impl App {
                         Line::from(""),
                         Line::from("↑/↓ choose · Enter continue · Esc cancel"),
                     ])
-                    .block(Block::bordered().title(" CREATE "))
+                    .block(theme::panel("").title(" a little moment "))
                     .style(Style::default().bg(BG)),
                     popup,
                 );
@@ -612,8 +602,8 @@ impl App {
                     ])
                     .wrap(Wrap { trim: true })
                     .block(
-                        Block::bordered()
-                            .title(" JUMP TO TIMER ")
+                        theme::panel("")
+                            .title(" jump to timer ")
                             .border_style(Style::default().fg(ACCENT)),
                     )
                     .style(Style::default().bg(BG)),
@@ -639,7 +629,7 @@ impl App {
                             if *field == 0 { "›" } else { " " },
                             name
                         ),
-                        Style::default().fg(if *field == 0 { ACCENT } else { Color::White }),
+                        Style::default().fg(if *field == 0 { ACCENT } else { Color::Reset }),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
@@ -653,7 +643,7 @@ impl App {
                             },
                             duration
                         ),
-                        Style::default().fg(if *field == 1 { ACCENT } else { Color::White }),
+                        Style::default().fg(if *field == 1 { ACCENT } else { Color::Reset }),
                     )),
                     Line::from(if *stopwatch {
                         "   e.g. 5m / 30s · blank disables alerts"
@@ -680,17 +670,17 @@ impl App {
                     Paragraph::new(text)
                         .wrap(Wrap { trim: false })
                         .block(
-                            Block::bordered()
+                            theme::panel("")
                                 .title(if *stopwatch {
                                     if *edit {
-                                        " EDIT STOPWATCH · saving resets elapsed time "
+                                        " edit stopwatch · saving resets it "
                                     } else {
-                                        " NEW STOPWATCH "
+                                        " new stopwatch "
                                     }
                                 } else if *edit {
-                                    " EDIT TIMER · saves reset the countdown "
+                                    " edit timer · saving resets it "
                                 } else {
-                                    " NEW TIMER "
+                                    " new timer "
                                 })
                                 .border_style(Style::default().fg(ACCENT)),
                         )
@@ -708,8 +698,8 @@ impl App {
                     ))
                     .wrap(Wrap { trim: true })
                     .block(
-                        Block::bordered()
-                            .title(" DELETE TIMER ")
+                        theme::panel("")
+                            .title(" delete timer ")
                             .border_style(Style::default().fg(Color::LightRed)),
                     )
                     .style(Style::default().bg(BG)),
@@ -746,15 +736,22 @@ fn main() -> io::Result<()> {
         clocks: world_clock::WorldClocks::load(&path.with_extension("clocks.json"))?,
         selected: 0,
         mode: Mode::Browse,
-        status: "Make time for something. Press n to add a timer.".into(),
+        status: String::new(),
         path,
         list: ListState::default(),
     };
     let mut alarm = alarm::Alarm::default();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    for signal in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        signal_hook::flag::register(signal, Arc::clone(&shutdown))?;
+    }
     #[cfg(target_os = "macos")]
     let mut awake = awake::Awake::default();
     ratatui::run(|terminal| -> io::Result<()> {
         loop {
+            if shutdown.load(Ordering::Relaxed) {
+                return Ok(());
+            }
             if alarm.poll().is_err() {
                 print!("\x07");
                 io::stdout().flush()?;
@@ -967,7 +964,7 @@ mod tests {
         let right_panel: String = (4..26)
             .flat_map(|y| (34..99).map(move |x| buffer[(x, y)].symbol()))
             .collect();
-        assert!(right_panel.contains("MEMO"));
+        assert!(right_panel.contains("memo"));
         assert!(right_panel.contains("Take a break afterward"));
         app.mode = Mode::Form {
             edit: true,
@@ -986,7 +983,7 @@ mod tests {
             .iter()
             .map(|c| c.symbol())
             .collect();
-        assert!(text.contains("EDIT TIMER"));
+        assert!(text.contains("edit timer"));
         for (width, height) in [(44, 16), (20, 5), (1, 1)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal.draw(|f| app.draw(f)).unwrap();

@@ -21,8 +21,8 @@ const DIGITS: [[&str; 5]; 10] = [
 
 fn pixels(time: &str, scale: usize) -> String {
     // Two deliberate sizes: 5 rows, or a modest 7 rows. Never fill the screen.
-    let on = "█".repeat(if scale == 2 { 3 } else { 2 });
-    let off = " ".repeat(if scale == 2 { 3 } else { 2 });
+    let on = "█".repeat(scale + 1);
+    let off = " ".repeat(scale + 1);
     let gap = " ";
     (0..5)
         .flat_map(|row| {
@@ -76,6 +76,21 @@ pub fn render(frame: &mut Frame, area: Rect, time: &str, color: Color) {
     } else {
         ratatui::text::Text::from(time.to_string())
     };
+    draw(frame, area, text, color);
+}
+
+pub fn render_compact(frame: &mut Frame, area: Rect, time: &str, color: Color) {
+    let text = ratatui::text::Text::from(pixels(time, 0));
+    let text =
+        if text.width() <= usize::from(area.width) && text.height() <= usize::from(area.height) {
+            text
+        } else {
+            ratatui::text::Text::from(time.to_string())
+        };
+    draw(frame, area, text, color);
+}
+
+fn draw(frame: &mut Frame, area: Rect, text: ratatui::text::Text<'_>, color: Color) {
     let height = (text.height() as u16).min(area.height);
     let centered = Rect::new(
         area.x,

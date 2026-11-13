@@ -1,10 +1,10 @@
-use crate::{ACCENT, BG, MUTED, block_clock, popup, shortcuts, storage};
+use crate::{ACCENT, BG, MUTED, block_clock, popup, shortcuts, storage, theme};
 use chrono::Utc;
 use chrono_tz::{TZ_VARIANTS, Tz};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::{fs, io, path::Path};
 
@@ -162,7 +162,7 @@ impl WorldClocks {
     pub fn draw(&mut self, f: &mut Frame, status: &str) {
         let area = f.area();
         let [header, grid, notice, footer] = Layout::vertical([
-            Constraint::Length(2),
+            Constraint::Length(if area.height < 22 { 3 } else { 4 }),
             Constraint::Min(1),
             Constraint::Length(2),
             Constraint::Length(shortcuts::height(
@@ -172,23 +172,24 @@ impl WorldClocks {
         ])
         .margin(1)
         .areas(area);
-        f.render_widget(
-            Paragraph::new("tmr / WORLD CLOCKS").style(Style::default().fg(ACCENT).bold()),
-            header,
-        );
+        theme::header(f, header, "world clocks");
         if self.zones.is_empty() {
             f.render_widget(Paragraph::new("No clocks yet. Press n to add a city or timezone.\nTry Tokyo, New York, London, or UTC.").wrap(Wrap { trim: true }), grid);
         } else {
-            let columns = usize::from((grid.width / 34).clamp(1, 3));
-            let rows = usize::from((grid.height / 10).max(1));
+            let columns = usize::from((grid.width / 33).clamp(1, 4)).min(self.zones.len());
+            let rows = usize::from((grid.height.saturating_add(1) / 13).max(1));
             let capacity = rows * columns;
             let first = self.selected / capacity * capacity;
             let end = (first + capacity).min(self.zones.len());
             let row_count = (end - first).div_ceil(columns);
-            let row_areas = Layout::vertical(vec![Constraint::Fill(1); row_count]).split(grid);
+            let row_areas = Layout::vertical(vec![Constraint::Length(12); row_count])
+                .spacing(1)
+                .split(grid);
             let now = Utc::now();
             for (row, zones) in row_areas.iter().zip(self.zones[first..end].chunks(columns)) {
-                let cells = Layout::horizontal(vec![Constraint::Fill(1); columns]).split(*row);
+                let cells = Layout::horizontal(vec![Constraint::Length(32); columns])
+                    .spacing(1)
+                    .split(*row);
                 for (&zone, &cell) in zones.iter().zip(cells.iter()) {
                     let index = self
                         .zones
@@ -200,16 +201,23 @@ impl WorldClocks {
                     } else {
                         MUTED
                     };
-                    let tile = Block::bordered()
-                        .title(format!(" {} ", zone.name().replace('_', " ")))
+                    let tile = theme::panel("")
+                        .title(format!(
+                            " {} ",
+                            zone.name()
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(zone.name())
+                                .replace('_', " ")
+                        ))
                         .border_style(Style::default().fg(color))
-                        .padding(Padding::horizontal(1));
+                        .padding(Padding::new(2, 2, 1, 1));
                     let inner = tile.inner(cell);
                     f.render_widget(tile, cell);
                     let [digits, date] =
                         Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(inner);
                     let local = now.with_timezone(&zone);
-                    block_clock::render(
+                    block_clock::render_compact(
                         f,
                         digits,
                         &local.format("%H:%M").to_string(),
@@ -232,8 +240,8 @@ impl WorldClocks {
         if let Some(picker) = &mut self.picker {
             let bounds = popup(area, 70, 22);
             f.render_widget(Clear, bounds);
-            let panel = Block::bordered()
-                .title(" ADD CITY / TIMEZONE ")
+            let panel = theme::panel("")
+                .title(" add a place ")
                 .style(Style::default().bg(BG));
             let inner = panel.inner(bounds);
             f.render_widget(panel, bounds);
@@ -257,7 +265,15 @@ impl WorldClocks {
             } else {
                 let items: Vec<_> = results
                     .iter()
-                    .map(|zone| ListItem::new(zone.name().replace('_', " ")))
+                    .map(|zone| {
+                        ListItem::new(
+                            zone.name()
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(zone.name())
+                                .replace('_', " "),
+                        )
+                    })
                     .collect();
                 picker.list.select(Some(picker.selected));
                 f.render_stateful_widget(
@@ -282,7 +298,7 @@ impl WorldClocks {
                     self.zones[self.selected]
                 ))
                 .wrap(Wrap { trim: true })
-                .block(Block::bordered().title(" REMOVE CLOCK "))
+                .block(theme::panel("").title(" remove clock "))
                 .style(Style::default().bg(BG)),
                 bounds,
             );
@@ -378,7 +394,7 @@ mod tests {
                 .iter()
                 .map(|c| c.symbol())
                 .collect();
-            assert!(text.contains("Asia/Tokyo"));
+            assert!(text.contains("Tokyo"));
             if width == 100 {
                 assert!(text.contains('█'));
             }
