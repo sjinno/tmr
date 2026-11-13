@@ -389,13 +389,16 @@ impl App {
             rows[0].x + 17,
             rows[0].y,
             rows[0].width.saturating_sub(17),
-            rows[0].height.min(5),
+            rows[0].height.min(6),
         );
         let saved_label = self.timers.len().to_string();
         let running_label = running.to_string();
+        let count_width = (saved_label.len().max(running_label.len()) as u16 * 5 + 7)
+            .max(15)
+            .min(counts_area.width.saturating_sub(2) / 2);
         let counts = Layout::horizontal([
-            Constraint::Length((saved_label.len() as u16 * 5 + 3).max(9)),
-            Constraint::Length((running_label.len() as u16 * 5 + 3).max(11)),
+            Constraint::Length(count_width),
+            Constraint::Length(count_width),
             Constraint::Min(0),
         ])
         .spacing(1)
@@ -409,7 +412,9 @@ impl App {
                 if running > 0 { MINT } else { MUTED },
             ),
         ] {
-            let panel = theme::panel(title).border_style(Style::default().fg(color));
+            let panel = theme::panel(title)
+                .padding(Padding::new(1, 1, u16::from(bounds.height >= 4), 0))
+                .border_style(Style::default().fg(color));
             let inner = panel.inner(bounds);
             f.render_widget(panel, bounds);
             block_clock::render_small(f, inner, label, color);

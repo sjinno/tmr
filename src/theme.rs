@@ -17,7 +17,7 @@ pub fn page(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
 }
 
 pub fn header_height(height: u16) -> u16 {
-    if height < 24 { 3 } else { 6 }
+    if height < 24 { 3 } else { 7 }
 }
 
 pub fn panel<'a>(title: impl Into<Line<'a>>) -> Block<'a> {
