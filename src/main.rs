@@ -490,7 +490,8 @@ impl App {
                         ))
                         .border_style(Style::default().fg(border))
                         .padding(Padding::new(2, 2, 1, 1));
-                    let gauge_width = usize::from(card.inner(bounds).width);
+                    let inner = card.inner(bounds);
+                    let gauge_width = usize::from(inner.width);
                     let mut metadata = timer.setting();
                     if let Some(utc) = timer.started_at {
                         metadata.push_str(&format!(", started_at: {}", format_start_time(utc)));
@@ -530,10 +531,7 @@ impl App {
                     Constraint::Length(1),
                     Constraint::Length(gap),
                     Constraint::Length(memo_height),
-                    Constraint::Length(
-                        u16::from(t.started_at.is_some())
-                            + if spacious { 2 } else { u16::from(t.stopwatch) },
-                    ),
+                    Constraint::Length(5),
                 ])
                 .margin(1)
                 .split(inside);
@@ -568,21 +566,57 @@ impl App {
                         }),
                     parts[3],
                 );
-                let mut details = Vec::new();
-                if let Some(utc) = t.started_at {
-                    details.push(Line::from(format!(
-                        "started at  {}",
-                        format_start_time(utc)
-                    )));
-                }
-                if spacious || t.stopwatch {
-                    details.push(Line::from(t.setting()));
-                }
-                if spacious {
-                    details.push(Line::from(format!("started     {} times", t.uses)));
-                }
+                let started = t
+                    .started_at
+                    .map(format_start_time)
+                    .unwrap_or_else(|| "--:--".into());
+                let duration = if t.stopwatch && t.seconds == 0 {
+                    "off".into()
+                } else {
+                    model::clock(Duration::from_secs(t.seconds))
+                };
+                let used = t.uses.to_string();
+                let headers = [
+                    "started at",
+                    if t.stopwatch {
+                        "alert every"
+                    } else {
+                        "duration"
+                    },
+                    "used",
+                ];
+                let values = [started.as_str(), duration.as_str(), used.as_str()];
+                let cell_width = headers
+                    .iter()
+                    .chain(values.iter())
+                    .map(|cell| cell.len())
+                    .max()
+                    .unwrap_or(0);
+                let widths = [cell_width; 3];
+                let border = |left: char, joint: char, right: char| {
+                    let segments = widths.map(|width| "─".repeat(width + 2));
+                    Line::styled(
+                        format!("{left}{}{right}", segments.join(&joint.to_string())),
+                        Style::default().fg(MUTED),
+                    )
+                };
+                let row = |cells: [&str; 3], style: Style| {
+                    let mut spans = vec![Span::styled("│", Style::default().fg(MUTED))];
+                    for (cell, width) in cells.into_iter().zip(widths) {
+                        spans.push(Span::styled(format!(" {cell:^width$} "), style));
+                        spans.push(Span::styled("│", Style::default().fg(MUTED)));
+                    }
+                    Line::from(spans)
+                };
                 f.render_widget(
-                    Paragraph::new(details).style(Style::default().fg(MUTED)),
+                    Paragraph::new(vec![
+                        border('╭', '┬', '╮'),
+                        row(headers, Style::default().fg(MUTED)),
+                        border('├', '┼', '┤'),
+                        row(values, Style::default()),
+                        border('╰', '┴', '╯'),
+                    ])
+                    .centered(),
                     parts[6],
                 );
             }
