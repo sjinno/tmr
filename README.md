@@ -79,6 +79,9 @@ the full timezone list. Use arrows and `Enter` to add a location. Named zones
 automatically follow daylight-saving changes. Arrows select tiles, `d` removes
 the selected clock with confirmation, and `t` returns to the main timer
 page. `c` and `Esc` also return to timers.
+Use `Alt+←` / `Alt+→` to reorder clocks. The selected clock follows the move,
+and its new position is saved automatically. Clock shortcuts fit on one row
+when space allows and wrap on narrower terminals.
 Timers and stopwatch alerts continue in the clock view. Saved locations live
 in `timers.clocks.json` beside the timer data file. On smaller terminals,
 selecting a tile brings its page into view, and digits shrink to fit.

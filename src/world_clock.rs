@@ -142,6 +142,21 @@ impl WorldClocks {
             }
         } else {
             match key.code {
+                code @ (KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down)
+                    if key.modifiers.contains(KeyModifiers::ALT) && !self.zones.is_empty() =>
+                {
+                    let next = if matches!(code, KeyCode::Left | KeyCode::Up) {
+                        self.selected.saturating_sub(1)
+                    } else {
+                        (self.selected + 1).min(self.zones.len() - 1)
+                    };
+                    if next != self.selected {
+                        self.zones.swap(self.selected, next);
+                        self.selected = next;
+                        self.dirty = true;
+                        return true;
+                    }
+                }
                 KeyCode::Char('n') | KeyCode::Char('/') => {
                     self.picker = Some(Picker::default());
                     self.notice.clear();
@@ -166,7 +181,7 @@ impl WorldClocks {
             Constraint::Length(theme::header_height(area.height)),
             Constraint::Min(1),
             Constraint::Length(2),
-            Constraint::Length(shortcuts::height(page.width, shortcuts::CLOCKS)),
+            Constraint::Length(shortcuts::height(page.width, shortcuts::CLOCKS, 1)),
         ])
         .areas(page);
         theme::header(f, header, "world clocks");
@@ -239,7 +254,7 @@ impl WorldClocks {
             Paragraph::new(format!("{}\n{status}", self.notice)).style(Style::default().fg(MUTED)),
             notice,
         );
-        shortcuts::render(f, footer, shortcuts::CLOCKS);
+        shortcuts::render(f, footer, shortcuts::CLOCKS, 1);
         if let Some(picker) = &mut self.picker {
             let bounds = popup(area, 70, 22);
             f.render_widget(Clear, bounds);
@@ -406,6 +421,15 @@ mod tests {
             terminal.draw(|f| loaded.draw(f, "")).unwrap();
             press(&mut loaded, KeyCode::Esc);
         }
+        assert!(loaded.key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT)));
+        assert_eq!(loaded.selected, 1);
+        assert_eq!(loaded.zones[1], chrono_tz::Asia::Tokyo);
+        assert!(!loaded.key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT)));
+        loaded.save(&path).unwrap();
+        assert_eq!(WorldClocks::load(&path).unwrap().zones, loaded.zones);
+        assert!(loaded.key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)));
+        assert_eq!(loaded.selected, 0);
+        assert_eq!(loaded.zones[0], chrono_tz::Asia::Tokyo);
         fs::write(&path, "[\"Bogus/Zone\"]").unwrap();
         assert!(WorldClocks::load(&path).is_err());
         fs::remove_file(path).unwrap();

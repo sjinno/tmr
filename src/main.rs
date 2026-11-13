@@ -321,7 +321,7 @@ impl App {
             Constraint::Length(theme::header_height(area.height)),
             Constraint::Min(5),
             Constraint::Length(if area.height < 22 { 1 } else { 2 }),
-            Constraint::Length(shortcuts::height(page.width, shortcuts::TIMERS)),
+            Constraint::Length(shortcuts::height(page.width, shortcuts::TIMERS, 2)),
         ])
         .split(page);
         let running = self.timers.iter().filter(|t| t.started.is_some()).count();
@@ -587,7 +587,7 @@ impl App {
                 .wrap(Wrap { trim: true }),
             rows[2],
         );
-        shortcuts::render(f, rows[3], shortcuts::TIMERS);
+        shortcuts::render(f, rows[3], shortcuts::TIMERS, 2);
         match &self.mode {
             Mode::Clocks => unreachable!(),
             Mode::Choose { stopwatch } => {

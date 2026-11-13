@@ -27,11 +27,16 @@ pub const CLOCKS: &[(&str, &str)] = &[
     ("q", "quit"),
     ("t", "timers"),
     ("←/→", "select"),
+    ("alt+←/→", "reorder"),
 ];
 
-fn column_widths(width: u16, entries: &[(&str, &str)]) -> Vec<(usize, usize)> {
-    // Prefer two rows, with additional rows on narrow terminals.
-    for columns in (1..=entries.len().div_ceil(2).max(1)).rev() {
+fn column_widths(
+    width: u16,
+    entries: &[(&str, &str)],
+    preferred_rows: usize,
+) -> Vec<(usize, usize)> {
+    // Wrap to additional rows when the preferred layout does not fit.
+    for columns in (1..=entries.len().div_ceil(preferred_rows).max(1)).rev() {
         let widths: Vec<_> = (0..columns)
             .map(|column| {
                 let mut key_width = 0;
@@ -55,12 +60,14 @@ fn column_widths(width: u16, entries: &[(&str, &str)]) -> Vec<(usize, usize)> {
     unreachable!()
 }
 
-pub fn height(width: u16, entries: &[(&str, &str)]) -> u16 {
-    entries.len().div_ceil(column_widths(width, entries).len()) as u16
+pub fn height(width: u16, entries: &[(&str, &str)], preferred_rows: usize) -> u16 {
+    entries
+        .len()
+        .div_ceil(column_widths(width, entries, preferred_rows).len()) as u16
 }
 
-pub fn render(frame: &mut Frame, area: Rect, entries: &[(&str, &str)]) {
-    let widths = column_widths(area.width, entries);
+pub fn render(frame: &mut Frame, area: Rect, entries: &[(&str, &str)], preferred_rows: usize) {
+    let widths = column_widths(area.width, entries, preferred_rows);
     let columns = widths.len();
     for (index, &(key, description)) in entries.iter().enumerate() {
         let row = index / columns;
