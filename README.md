@@ -1,106 +1,144 @@
 # tmr
 
-A small terminal home for reusable timers, built with Rust and Ratatui.
-Run multiple countdowns, keep your favorites close, and reuse timers without recreating them.
+A little terminal app for timers, stopwatches, and world clocks. Built with
+Rust and Ratatui, with block digits, rounded panels, and your terminal's
+background color.
 
-## Run
+## run
 
-Install Rust, then from this directory:
+With Rust installed, run from the project directory:
 
 ```sh
 cargo run
 ```
 
-To install the `tmr` command (ensure `~/.cargo/bin` is on your PATH):
+To install the `tmr` command:
 
 ```sh
 cargo install --path .
 tmr
 ```
 
-## Keys
+Make sure `~/.cargo/bin` is on your PATH. After updating the source, reinstall
+with `cargo install --path . --force` to update the installed command.
 
-| Key | Action |
+Use a terminal at least 44 columns wide and 16 rows tall. Wider terminals show
+the timer list and **on the clock** panel side by side.
+
+## timers and stopwatches
+
+Press `n`, choose **timer** or **stopwatch**, and press `Enter` to continue.
+Names and memos are optional. Names keep the casing you enter. New timers and
+stopwatches start immediately when saved.
+
+Use `Tab` or `Shift+Tab` to move between fields, `Backspace` to erase,
+`Enter` to save, and `Esc` to cancel. Editing an existing timer or stopwatch
+resets its current run and leaves it ready to start.
+
+### durations
+
+Use whole numbers with `h`, `m`, and `s`, with or without spaces.
+
+| input | duration |
 | --- | --- |
-| `n` | Choose Timer or Stopwatch, then create it |
-| `↑` / `↓` or `k` / `j` | Select a timer |
-| `/` then number, `Enter` | Jump to a timer by its displayed list number; `Esc` cancels |
-| `Space` / `Enter` | Start, pause, resume, or reuse a completed timer |
-| `r` | Reset the selected timer |
-| `e` | Edit its name and duration; saving resets its countdown |
-| `d` | Delete, with confirmation |
-| `f` | Toggle favorite |
-| `Alt+↑` / `Alt+↓` | Move the selected timer up / down in your ranking |
-| `s` | Sort favorites first, then by number of starts |
-| `c` | Open world clocks |
-| `q` / `Ctrl-C` | Save and quit |
+| `1h` | 1 hour |
+| `6m 10s` | 6 minutes, 10 seconds |
+| `100s` | 100 seconds |
+| `1h30m` | 1 hour, 30 minutes |
+| `10` | 10 seconds |
+| `10 10` or `10:10` | 10 minutes, 10 seconds |
+| `1 30 0` or `1:30:00` | 1 hour, 30 minutes |
 
-In the timer form, use `Tab` to switch fields, `Backspace` to erase,
-`Enter` to save, and `Esc` to cancel. New timers start with an empty duration.
-Saving a new timer starts its countdown immediately.
-For a stopwatch, set **Alert every** to a duration such as `5m` or `30s`,
-or leave it blank for no alerts. Stopwatches start counting up immediately.
-Space pauses or resumes, and `r` resets elapsed time to zero. Interval alerts
-use active elapsed time, excluding pauses, and play the same alarm sound.
-If several intervals pass between updates, one alert covers them. The gauge
-shows progress toward the next alert. Stopwatch presets and intervals are
-saved, and elapsed time starts fresh when you reopen the app.
-Names are optional; unnamed timers display a duration-based label like `01:30 timer`.
-Each timer also has an optional memo (up to 80 characters). Use `Tab` to move
-between name, duration, and memo; `Shift-Tab` moves backward. Memos are saved
-with the timer and shown in the list and countdown panel. Press `e` to edit them.
-Enter durations with units: `1h`, `6m 10s`, `100s`, or `1h30m`.
-Units are case-insensitive; spaces between values and units are optional.
-Use whole numbers with a positive total, up to 999 hours.
-Plain seconds (`10`), minutes and seconds (`10 10`), hours/minutes/seconds
-(`1 30 0`), and colon-separated durations (`1:30` or `1:00:00`) also work.
+Units are case-insensitive. Timer durations must be positive and at most
+999 hours. Unnamed timers use a duration-based label, such as `01:30 timer`.
 
-Each fresh start counts as one use; resuming a paused timer does not.
-Multiple timers can run at once. Completion displays a message and plays the
-bundled rooster alarm (`assets/alarm.mp3`). On macOS this uses the built-in
-`afplay`; other platforms need `ffplay` on PATH. Playback runs without blocking
-the UI, and simultaneous completions share the current sound. If playback is
-unavailable or fails, tmr sends a terminal bell instead (audibility depends on
-terminal settings). Quitting stops any playing alarm. The MP3 is embedded in
-the binary, so the original Downloads file is no longer needed. Keep the app open
-for countdowns and alerts; it does not run in the background after quitting.
+### stopwatch alerts
 
-Timer presets, favorites, usage counts, and manual order are saved automatically
-in the platform's application data directory (`tmr/timers.json`). On macOS this
-is `~/Library/Application Support/tmr/timers.json`; on Linux it is usually
-`~/.local/share/tmr/timers.json`. Set `TMR_DATA_FILE` to override the full file
-path. Countdowns reopen at their full duration. Invalid saved files produce an
-error without overwriting the original. Run one instance per data file.
+A stopwatch counts up from zero. Set **alert every** to an interval such as
+`5m` or `30s`, or leave it blank to disable alerts. Its gauge tracks progress
+toward the next alert. Paused time does not count toward intervals.
 
-Press `c` for world-clock tiles with block digits, local dates, and UTC offsets.
-In this view, `n` opens a picker with popular locations. Type a city like
-`New York` or `Tokyo`, or an IANA timezone such as `Europe/London`, to search
-the full timezone list. Use arrows and `Enter` to add a location. Named zones
-automatically follow daylight-saving changes. Arrows select tiles, `d` removes
-the selected clock with confirmation, and `t` returns to the main timer
-page. `c` and `Esc` also return to timers.
-Use `Alt+←` / `Alt+→` to reorder clocks. The selected clock follows the move,
-and its new position is saved automatically. Clock shortcuts fit on one row
-when space allows and wrap on narrower terminals.
-Timers and stopwatch alerts continue in the clock view. Saved locations live
-in `timers.clocks.json` beside the timer data file. On smaller terminals,
-selecting a tile brings its page into view, and digits shrink to fit.
+Stopwatches continue running after an interval alert. If several intervals
+pass between updates, one alert covers them. Resetting starts elapsed time
+and the alert schedule over from zero.
 
-## Development
+### controls
 
-For automatic rebuilds and restarts while editing, run:
+| key | action |
+| --- | --- |
+| `c` | open world clocks |
+| `d` | delete the selected item, with confirmation |
+| `e` | edit name, duration or alert interval, and memo |
+| `f` | toggle favorite |
+| `n` | create a timer or stopwatch |
+| `q` / `Ctrl+C` | save and quit |
+| `r` | reset the selected item |
+| `s` | sort favorites first, then by usage count |
+| `/` then number, `Enter` | jump to the displayed list number; `Esc` cancels |
+| `↑` / `↓` or `k` / `j` | select an item |
+| `Space` / `Enter` | start, pause, resume, or reuse |
+| `Alt+↑` / `Alt+↓` | reorder the selected item |
 
-```sh
-./dev.sh
-```
+List numbers follow the current order. Each fresh start counts as one use;
+resuming a paused run does not. Reordering and favorites are saved automatically.
 
-This uses `cargo-watch` to watch `src`, `assets`, and `Cargo.toml`. Install it
-once with `cargo install cargo-watch` if needed. Source changes restart the
-app, so active countdowns and stopwatch elapsed time reset. Use `Ctrl-C` to
-stop the watcher after closing the app with `q`.
+The timer list shows block-digit IDs and green countdowns and `run` labels for
+active items. **on the clock** shows the selected item's centered title,
+countdown, gauge, memo, and a details grid with start time, duration or alert
+interval, and usage count. Start times use local hours and minutes, with UTC
+as a fallback. Resetting clears the start time.
 
-```sh
-cargo fmt --check
-cargo test
-cargo clippy --all-targets -- -D warnings
-```
+When multiple items are running, the panel shows their individual cards.
+Selecting a running item brings its card into view if the cards overflow.
+
+## world clocks
+
+Press `c` to open compact clock tiles with block digits, local dates, timezone
+abbreviations, and UTC offsets. Timers and stopwatch alerts continue running
+while you browse clocks.
+
+Press `n` to choose from popular locations, or type a city such as `Tokyo` or
+`New York` to search the timezone list. Full IANA names such as `Europe/London`
+also work. Use `↑` / `↓` and `Enter` to add a location, or `Esc` to cancel.
+Named timezones follow daylight-saving changes automatically.
+
+| key | action |
+| --- | --- |
+| `d` | remove the selected clock, with confirmation |
+| `n` or `/` | search for a city or timezone |
+| `q` / `Ctrl+C` | save and quit |
+| `t` | return to timers; `c` or `Esc` also works |
+| arrows or `j` / `k` | select a clock |
+| `Alt+←` / `Alt+→` | reorder clocks; `Alt+↑` / `Alt+↓` also works |
+
+Locations and their order are saved. On smaller terminals, selecting a clock
+brings its page into view, and digits shrink to fit.
+
+## alarms and keeping awake
+
+Timer completion and stopwatch interval alerts play the bundled rooster sound
+in `assets/alarm.mp3`. Playback uses macOS's built-in `afplay`; other platforms
+need `ffplay` on PATH. If playback fails, the app uses a terminal bell instead.
+Simultaneous alerts share the current sound. Quitting stops playback.
+
+On macOS, tmr uses `caffeinate` to prevent idle system and display sleep while
+any timer or stopwatch is running. The hold is released when all runs pause or
+finish, or when the app exits. Keep the app open for countdowns and alerts.
+
+## saved data
+
+Presets, memos, favorites, usage counts, and list order are saved in the
+platform's application data directory.
+
+| platform | default timer data file |
+| --- | --- |
+| macOS | `~/Library/Application Support/tmr/timers.json` |
+| Linux | `~/.local/share/tmr/timers.json` (unless `XDG_DATA_HOME` is set) |
+
+Set `TMR_DATA_FILE` to override the full timer data path. Clock locations are
+stored beside it in `timers.clocks.json` by default. An overridden filename
+gets the same `.clocks.json` extension.
+
+Countdowns reopen at their full duration. Stopwatch elapsed time reopens at
+zero. Invalid saved files produce an error without overwriting the original.
+Use one app instance per data file.
