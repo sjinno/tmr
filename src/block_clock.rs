@@ -106,6 +106,41 @@ fn draw(frame: &mut Frame, area: Rect, text: ratatui::text::Text<'_>, color: Col
     );
 }
 
+pub fn render_count(frame: &mut Frame, area: Rect, count: &str, color: Color) {
+    let lines: Vec<String> = (0..3)
+        .map(|pair| {
+            count
+                .chars()
+                .filter_map(|digit| digit.to_digit(10))
+                .map(|digit| {
+                    let glyph = DIGITS[digit as usize];
+                    (0..3)
+                        .map(|column| {
+                            let top = glyph[pair * 2].as_bytes()[column] == b'1';
+                            let bottom =
+                                pair * 2 + 1 < 5 && glyph[pair * 2 + 1].as_bytes()[column] == b'1';
+                            match (top, bottom) {
+                                (true, true) => '█',
+                                (true, false) => '▀',
+                                (false, true) => '▄',
+                                (false, false) => ' ',
+                            }
+                        })
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect();
+    let text = ratatui::text::Text::from(lines.join("\n"));
+    let text = if area.height >= 3 && text.width() <= usize::from(area.width) {
+        text
+    } else {
+        ratatui::text::Text::from(count.to_string())
+    };
+    draw(frame, area, text, color);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

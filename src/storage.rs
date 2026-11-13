@@ -10,7 +10,7 @@ pub fn path() -> io::Result<PathBuf> {
     }
     directories::ProjectDirs::from("", "", "tmr")
         .map(|dirs| dirs.data_dir().join("timers.json"))
-        .ok_or_else(|| io::Error::other("Cannot locate data directory; set TMR_DATA_FILE"))
+        .ok_or_else(|| io::Error::other("cannot locate data directory; set TMR_DATA_FILE"))
 }
 pub fn load(path: &Path) -> io::Result<Vec<Timer>> {
     let data = match fs::read(path) {
@@ -21,7 +21,7 @@ pub fn load(path: &Path) -> io::Result<Vec<Timer>> {
     let mut timers: Vec<Timer> = serde_json::from_slice(&data).map_err(io::Error::other)?;
     for timer in &mut timers {
         if (!timer.stopwatch && timer.seconds == 0) || timer.seconds > 999 * 3600 {
-            return Err(io::Error::other("Invalid saved timer"));
+            return Err(io::Error::other("invalid saved timer"));
         }
         timer.reset();
     }

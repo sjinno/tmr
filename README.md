@@ -30,7 +30,7 @@ tmr
 | `e` | Edit its name and duration; saving resets its countdown |
 | `d` | Delete, with confirmation |
 | `f` | Toggle favorite |
-| `J` / `K` | Move selected timer down / up in your ranking |
+| `Alt+↑` / `Alt+↓` | Move the selected timer up / down in your ranking |
 | `s` | Sort favorites first, then by number of starts |
 | `c` | Open world clocks |
 | `q` / `Ctrl-C` | Save and quit |

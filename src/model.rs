@@ -29,7 +29,7 @@ pub struct Timer {
 impl Timer {
     pub fn label(&self) -> String {
         if self.name.trim().is_empty() && self.stopwatch {
-            "Stopwatch".into()
+            "stopwatch".into()
         } else if self.name.trim().is_empty() {
             format!("{} timer", clock(Duration::from_secs(self.seconds)))
         } else {
@@ -142,7 +142,7 @@ impl Timer {
 pub fn parse_duration(input: &str) -> Result<u64, String> {
     let input = input.trim();
     let error =
-        || "Use 1h, 6m 10s, or 100s. Max: 999 hours; duration must be positive.".to_string();
+        || "use 1h, 6m 10s, or 100s. max: 999 hours; duration must be positive.".to_string();
     if input.bytes().any(|b| b.is_ascii_alphabetic()) {
         let mut rest = input;
         let mut total = 0u64;

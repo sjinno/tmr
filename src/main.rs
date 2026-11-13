@@ -64,7 +64,7 @@ impl App {
             Ok(()) => true,
             Err(e) => {
                 self.status =
-                    format!("Save failed: {e}. Changes remain in memory; retry before quitting.");
+                    format!("save failed: {e}. changes remain in memory; retry before quitting.");
                 false
             }
         }
@@ -131,12 +131,12 @@ impl App {
                     {
                         Some(n) => {
                             self.selected = n - 1;
-                            self.status = format!("Selected timer #{n}. Space to start / pause.");
+                            self.status = format!("selected timer #{n}. space to start / pause.");
                             self.mode = Mode::Browse;
                         }
                         None => {
                             *error =
-                                format!("Enter a timer number from 1 to {}.", self.timers.len())
+                                format!("enter a timer number from 1 to {}.", self.timers.len())
                         }
                     }
                 }
@@ -186,7 +186,7 @@ impl App {
                             t.seconds = seconds;
                             t.stopwatch = *stopwatch;
                             t.reset();
-                            self.status = "Saved. Space to start.".into();
+                            self.status = "saved. space to start.".into();
                         } else {
                             let mut timer = Timer::new(name.trim().to_string(), seconds);
                             timer.stopwatch = *stopwatch;
@@ -195,7 +195,7 @@ impl App {
                             timer.toggle(Instant::now());
                             self.timers.push(timer);
                             self.selected = self.timers.len() - 1;
-                            self.status = "Created and running. Space to pause.".into();
+                            self.status = "created and running. space to pause.".into();
                         }
                         self.mode = Mode::Browse;
                         self.persist();
@@ -208,17 +208,33 @@ impl App {
                     self.timers.remove(self.selected);
                     self.selected = self.selected.min(self.timers.len().saturating_sub(1));
                     self.mode = Mode::Browse;
-                    self.status = "Timer deleted.".into();
+                    self.status = "timer deleted.".into();
                     self.persist();
                 }
                 KeyCode::Esc | KeyCode::Char('n') => self.mode = Mode::Browse,
                 _ => {}
             },
             Mode::Browse => match key.code {
+                code @ (KeyCode::Up | KeyCode::Down)
+                    if key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    if !self.timers.is_empty() {
+                        let next = if code == KeyCode::Up {
+                            self.selected.saturating_sub(1)
+                        } else {
+                            (self.selected + 1).min(self.timers.len() - 1)
+                        };
+                        if next != self.selected {
+                            self.timers.swap(self.selected, next);
+                            self.selected = next;
+                            self.persist();
+                        }
+                    }
+                }
                 KeyCode::Char('c') => self.mode = Mode::Clocks,
                 KeyCode::Char('/') => {
                     if self.timers.is_empty() {
-                        self.status = "No timers yet. Press n to create one.".into();
+                        self.status = "no timers yet. press n to create one.".into();
                     } else {
                         self.mode = Mode::Jump {
                             number: String::new(),
@@ -243,7 +259,7 @@ impl App {
                         (std::cmp::Reverse(t.favorite), std::cmp::Reverse(t.uses))
                     });
                     self.selected = 0;
-                    self.status = "Sorted by favorites, then most used.".into();
+                    self.status = "sorted by favorites, then most used.".into();
                     self.persist();
                 }
                 code if !self.timers.is_empty() => {
@@ -274,16 +290,6 @@ impl App {
                             }
                         }
                         KeyCode::Char('d') => self.mode = Mode::Delete,
-                        KeyCode::Char('K') if self.selected > 0 => {
-                            self.timers.swap(self.selected, self.selected - 1);
-                            self.selected -= 1;
-                            self.persist();
-                        }
-                        KeyCode::Char('J') if self.selected + 1 < self.timers.len() => {
-                            self.timers.swap(self.selected, self.selected + 1);
-                            self.selected += 1;
-                            self.persist();
-                        }
                         _ => {}
                     }
                 }
@@ -300,7 +306,7 @@ impl App {
         );
         if area.width < 44 || area.height < 16 {
             f.render_widget(
-                Paragraph::new("tmr · Please resize to at least 44 × 16.\nq to quit")
+                Paragraph::new("tmr · please resize to at least 44 × 16.\nq to quit")
                     .wrap(Wrap { trim: true }),
                 area,
             );
@@ -310,23 +316,45 @@ impl App {
             self.clocks.draw(f, &self.status);
             return;
         }
+        let page = theme::page(area);
         let rows = Layout::vertical([
-            Constraint::Length(if area.height < 22 { 3 } else { 4 }),
+            Constraint::Length(theme::header_height(area.height)),
             Constraint::Min(5),
-            Constraint::Length(if area.height < 22 { 1 } else { 3 }),
-            Constraint::Length(shortcuts::height(
-                area.width.saturating_sub(2),
-                shortcuts::TIMERS,
-            )),
+            Constraint::Length(if area.height < 22 { 1 } else { 2 }),
+            Constraint::Length(shortcuts::height(page.width, shortcuts::TIMERS)),
         ])
-        .margin(1)
-        .split(area);
+        .split(page);
         let running = self.timers.iter().filter(|t| t.started.is_some()).count();
-        theme::header(
-            f,
-            rows[0],
-            &format!("{} saved · {} running", self.timers.len(), running),
+        theme::header(f, rows[0], "");
+        let counts_area = Rect::new(
+            rows[0].x + 17,
+            rows[0].y,
+            rows[0].width.saturating_sub(17),
+            rows[0].height.min(5),
         );
+        let saved_label = self.timers.len().to_string();
+        let running_label = running.to_string();
+        let counts = Layout::horizontal([
+            Constraint::Length((saved_label.len() as u16 * 4 + 3).max(9)),
+            Constraint::Length((running_label.len() as u16 * 4 + 3).max(11)),
+            Constraint::Min(0),
+        ])
+        .spacing(1)
+        .split(counts_area);
+        for (bounds, title, label, color) in [
+            (counts[0], " saved ", saved_label.as_str(), ACCENT),
+            (
+                counts[1],
+                " running ",
+                running_label.as_str(),
+                if running > 0 { MINT } else { MUTED },
+            ),
+        ] {
+            let panel = theme::panel(title).border_style(Style::default().fg(color));
+            let inner = panel.inner(bounds);
+            f.render_widget(panel, bounds);
+            block_clock::render_count(f, inner, label, color);
+        }
         let columns = if area.width >= 85 {
             Layout::horizontal([
                 Constraint::Length((area.width / 3).clamp(32, 48)),
@@ -344,13 +372,13 @@ impl App {
             .enumerate()
             .map(|(i, t)| {
                 let state = if t.finished {
-                    "DONE"
+                    "done"
                 } else if t.started.is_some() {
-                    "RUN"
+                    "run"
                 } else if t.started_at.is_some() {
-                    "PAUSE"
+                    "pause"
                 } else {
-                    "READY"
+                    "ready"
                 };
                 ListItem::new(vec![
                     Line::from(vec![
@@ -397,7 +425,7 @@ impl App {
             .padding(Padding::new(1, 1, 1, 1))
             .border_style(Style::default().fg(MUTED));
         if self.timers.is_empty() {
-            f.render_widget(Paragraph::new("\n  Nothing on the clock.\n\n  Press n to create your first timer.\n  Tea, a deep work session, a quick break…").block(block).wrap(Wrap { trim: false }), columns[0]);
+            f.render_widget(Paragraph::new("\n  nothing on the clock.\n\n  press n to create your first timer.\n  tea, a deep work session, a quick break…").block(block).wrap(Wrap { trim: false }), columns[0]);
         } else {
             f.render_stateful_widget(
                 List::new(items)
@@ -413,7 +441,7 @@ impl App {
             let inside = panel.inner(columns[1]);
             f.render_widget(panel, columns[1]);
             if running > 1 {
-                let [summary, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)])
+                let [summary, list] = Layout::vertical([Constraint::Length(2), Constraint::Min(0)])
                     .horizontal_margin(1)
                     .areas(inside);
                 let active: Vec<_> = self
@@ -526,18 +554,18 @@ impl App {
                         .gauge_style(Style::default().fg(ACCENT).bg(BG))
                         .ratio(ratio)
                         .label(if t.finished {
-                            "Complete"
+                            "complete"
                         } else if t.started.is_some() {
-                            "Running"
+                            "running"
                         } else {
-                            "Space to start / resume"
+                            "space to start / resume"
                         }),
                     parts[3],
                 );
                 let mut details = Vec::new();
                 if let Some(utc) = t.started_at {
                     details.push(Line::from(format!(
-                        "Started at  {}",
+                        "started at  {}",
                         format_start_time(utc)
                     )));
                 }
@@ -545,7 +573,7 @@ impl App {
                     details.push(Line::from(t.setting()));
                 }
                 if spacious {
-                    details.push(Line::from(format!("Started     {} times", t.uses)));
+                    details.push(Line::from(format!("started     {} times", t.uses)));
                 }
                 f.render_widget(
                     Paragraph::new(details).style(Style::default().fg(MUTED)),
@@ -568,18 +596,18 @@ impl App {
                 f.render_widget(
                     Paragraph::new(vec![
                         Line::from(Span::styled(
-                            format!("{} Timer · count down", if !stopwatch { "›" } else { " " }),
+                            format!("{} timer · count down", if !stopwatch { "›" } else { " " }),
                             Style::default().fg(if !stopwatch { ACCENT } else { MUTED }),
                         )),
                         Line::from(Span::styled(
                             format!(
-                                "{} Stopwatch · count up",
+                                "{} stopwatch · count up",
                                 if *stopwatch { "›" } else { " " }
                             ),
                             Style::default().fg(if *stopwatch { ACCENT } else { MUTED }),
                         )),
                         Line::from(""),
-                        Line::from("↑/↓ choose · Enter continue · Esc cancel"),
+                        Line::from("↑/↓ choose · enter continue · esc cancel"),
                     ])
                     .block(theme::panel("").title(" a little moment "))
                     .style(Style::default().bg(BG)),
@@ -593,12 +621,12 @@ impl App {
                 f.render_widget(
                     Paragraph::new(vec![
                         Line::from(format!("/{number}▏")),
-                        Line::from("Use the number shown in the timer list."),
+                        Line::from("use the number shown in the timer list."),
                         Line::from(Span::styled(
                             error.as_str(),
                             Style::default().fg(Color::LightRed),
                         )),
-                        Line::from("Enter jump · Backspace erase · Esc cancel"),
+                        Line::from("enter jump · backspace erase · esc cancel"),
                     ])
                     .wrap(Wrap { trim: true })
                     .block(
@@ -625,8 +653,9 @@ impl App {
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
-                            " {} Name (optional)  {}",
+                            " {} {:15}  {}",
                             if *field == 0 { "›" } else { " " },
+                            "name (optional)",
                             name
                         ),
                         Style::default().fg(if *field == 0 { ACCENT } else { Color::Reset }),
@@ -634,12 +663,12 @@ impl App {
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
-                            " {} {}  {}",
+                            " {} {:15}  {}",
                             if *field == 1 { "›" } else { " " },
                             if *stopwatch {
-                                "Alert every"
+                                "alert every"
                             } else {
-                                "Duration"
+                                "duration"
                             },
                             duration
                         ),
@@ -653,8 +682,9 @@ impl App {
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
-                            " {} Memo (optional)  {}",
+                            " {} {:15}  {}",
                             if *field == 2 { "›" } else { " " },
+                            "memo (optional)",
                             memo
                         ),
                         Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
@@ -664,7 +694,7 @@ impl App {
                         error.as_str(),
                         Style::default().fg(Color::LightRed),
                     )),
-                    Line::from("Tab switch · Backspace erase · Enter save · Esc cancel"),
+                    Line::from("tab switch · backspace erase · enter save · esc cancel"),
                 ];
                 f.render_widget(
                     Paragraph::new(text)
@@ -693,7 +723,7 @@ impl App {
                 f.render_widget(Clear, popup);
                 f.render_widget(
                     Paragraph::new(format!(
-                        "Delete “{}”?\n\nEnter / y delete · Esc / n cancel",
+                        "delete “{}”?\n\nenter / y delete · esc / n cancel",
                         self.timers[self.selected].label()
                     ))
                     .wrap(Wrap { trim: true })
@@ -712,7 +742,7 @@ impl App {
 fn format_start_time(utc: time::OffsetDateTime) -> String {
     let (started_at, zone) = match time::UtcOffset::local_offset_at(utc) {
         Ok(offset) => (utc.to_offset(offset), ""),
-        Err(_) => (utc, " UTC"),
+        Err(_) => (utc, " utc"),
     };
     format!("{:02}:{:02}{zone}", started_at.hour(), started_at.minute(),)
 }
@@ -730,7 +760,7 @@ fn popup(area: Rect, width: u16, height: u16) -> Rect {
 fn main() -> io::Result<()> {
     let path = storage::path()?;
     let timers = storage::load(&path)
-        .map_err(|e| io::Error::other(format!("Could not load {}: {e}", path.display())))?;
+        .map_err(|e| io::Error::other(format!("could not load {}: {e}", path.display())))?;
     let mut app = App {
         timers,
         clocks: world_clock::WorldClocks::load(&path.with_extension("clocks.json"))?,
@@ -755,7 +785,7 @@ fn main() -> io::Result<()> {
             if alarm.poll().is_err() {
                 print!("\x07");
                 io::stdout().flush()?;
-                app.status = "Audio playback failed; used terminal bell instead.".into();
+                app.status = "audio playback failed; used terminal bell instead.".into();
             }
             let now = Instant::now();
             let mut completed = Vec::new();
@@ -774,12 +804,12 @@ fn main() -> io::Result<()> {
                     print!("\x07");
                     io::stdout().flush()?;
                     app.status
-                        .push_str(" · Audio unavailable; used terminal bell.");
+                        .push_str(" · audio unavailable; used terminal bell.");
                 }
             }
             #[cfg(target_os = "macos")]
             if let Err(e) = awake.update(app.timers.iter().any(|timer| timer.started.is_some())) {
-                app.status = format!("Could not keep Mac awake: {e}");
+                app.status = format!("could not keep mac awake: {e}");
             }
             terminal.draw(|f| app.draw(f))?;
             if event::poll(Duration::from_millis(100))?
@@ -796,6 +826,40 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn alt_arrows_reorder_and_keep_selection_with_timer() {
+        let path = std::env::temp_dir().join(format!(
+            "tmr-reorder-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = App {
+            timers: vec![Timer::new("a".into(), 10), Timer::new("b".into(), 20)],
+            clocks: world_clock::WorldClocks::default(),
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: path.clone(),
+            list: ListState::default(),
+        };
+        app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+        assert_eq!(app.selected, 1);
+        assert_eq!(app.timers[1].name, "a");
+        app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+        assert_eq!(app.selected, 1);
+        app.key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.selected, 0);
+        assert_eq!(app.timers[0].name, "b");
+        app.key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+        assert_eq!(app.selected, 0);
+        app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+        assert_eq!(app.timers[1].name, "b");
+        assert_eq!(storage::load(&path).unwrap()[1].name, "b");
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn stopwatch_creation_and_editing() {
         let path = std::env::temp_dir().join(format!(
@@ -956,7 +1020,7 @@ mod tests {
             .iter()
             .map(|c| c.symbol())
             .collect();
-        assert!(text.contains("Nothing on the clock"));
+        assert!(text.contains("nothing on the clock"));
         app.timers.push(Timer::new("Focus".into(), 1500));
         app.timers[0].memo = "Take a break afterward".into();
         terminal.draw(|f| app.draw(f)).unwrap();

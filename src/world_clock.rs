@@ -113,14 +113,14 @@ impl WorldClocks {
                     if let Some(&zone) = results.get(picker.selected) {
                         if let Some(index) = self.zones.iter().position(|&saved| saved == zone) {
                             self.selected = index;
-                            self.notice = "That timezone is already added.".into();
+                            self.notice = "that timezone is already added.".into();
                             self.picker = None;
                         } else {
                             self.zones.push(zone);
                             self.dirty = true;
                             self.selected = self.zones.len() - 1;
                             self.picker = None;
-                            self.notice = format!("Added {}", zone.name());
+                            self.notice = format!("added {}", zone.name().to_lowercase());
                             return true;
                         }
                     }
@@ -135,7 +135,7 @@ impl WorldClocks {
                     self.dirty = true;
                     self.selected = self.selected.min(self.zones.len().saturating_sub(1));
                     self.deleting = false;
-                    self.notice = "Clock removed.".into();
+                    self.notice = "clock removed.".into();
                     return true;
                 }
                 _ => {}
@@ -161,20 +161,17 @@ impl WorldClocks {
 
     pub fn draw(&mut self, f: &mut Frame, status: &str) {
         let area = f.area();
+        let page = theme::page(area);
         let [header, grid, notice, footer] = Layout::vertical([
-            Constraint::Length(if area.height < 22 { 3 } else { 4 }),
+            Constraint::Length(theme::header_height(area.height)),
             Constraint::Min(1),
             Constraint::Length(2),
-            Constraint::Length(shortcuts::height(
-                area.width.saturating_sub(2),
-                shortcuts::CLOCKS,
-            )),
+            Constraint::Length(shortcuts::height(page.width, shortcuts::CLOCKS)),
         ])
-        .margin(1)
-        .areas(area);
+        .areas(page);
         theme::header(f, header, "world clocks");
         if self.zones.is_empty() {
-            f.render_widget(Paragraph::new("No clocks yet. Press n to add a city or timezone.\nTry Tokyo, New York, London, or UTC.").wrap(Wrap { trim: true }), grid);
+            f.render_widget(Paragraph::new("no clocks yet. press n to add a city or timezone.\ntry tokyo, new york, london, or utc.").wrap(Wrap { trim: true }), grid);
         } else {
             let columns = usize::from((grid.width / 33).clamp(1, 4)).min(self.zones.len());
             let rows = usize::from((grid.height.saturating_add(1) / 13).max(1));
@@ -209,6 +206,7 @@ impl WorldClocks {
                                 .next()
                                 .unwrap_or(zone.name())
                                 .replace('_', " ")
+                                .to_lowercase()
                         ))
                         .border_style(Style::default().fg(color))
                         .padding(Padding::new(2, 2, 1, 1));
@@ -224,9 +222,14 @@ impl WorldClocks {
                         Color::Reset,
                     );
                     f.render_widget(
-                        Paragraph::new(local.format("%a, %b %-d\n%Z · UTC %:z").to_string())
-                            .centered()
-                            .style(Style::default().fg(MUTED)),
+                        Paragraph::new(
+                            local
+                                .format("%a, %b %-d\n%Z · utc %:z")
+                                .to_string()
+                                .to_lowercase(),
+                        )
+                        .centered()
+                        .style(Style::default().fg(MUTED)),
                         date,
                     );
                 }
@@ -252,14 +255,14 @@ impl WorldClocks {
             ])
             .areas(inner);
             f.render_widget(
-                Paragraph::new(format!("Search: {}▏", picker.query))
+                Paragraph::new(format!("search: {}▏", picker.query))
                     .style(Style::default().fg(ACCENT)),
                 input,
             );
             let results = matches(&picker.query);
             if results.is_empty() {
                 f.render_widget(
-                    Paragraph::new("No matches. Try a city like Tokyo or New York."),
+                    Paragraph::new("no matches. try a city like tokyo or new york."),
                     results_area,
                 );
             } else {
@@ -271,7 +274,8 @@ impl WorldClocks {
                                 .rsplit('/')
                                 .next()
                                 .unwrap_or(zone.name())
-                                .replace('_', " "),
+                                .replace('_', " ")
+                                .to_lowercase(),
                         )
                     })
                     .collect();
@@ -285,7 +289,7 @@ impl WorldClocks {
                 );
             }
             f.render_widget(
-                Paragraph::new("Popular locations · type to search all timezones\n↑/↓ select · Enter add · Esc cancel")
+                Paragraph::new("popular locations · type to search all timezones\n↑/↓ select · enter add · esc cancel")
                     .style(Style::default().fg(MUTED)),
                 help,
             );
@@ -294,8 +298,8 @@ impl WorldClocks {
             f.render_widget(Clear, bounds);
             f.render_widget(
                 Paragraph::new(format!(
-                    "Remove {}?\nEnter / y remove · Esc / n cancel",
-                    self.zones[self.selected]
+                    "remove {}?\nenter / y remove · esc / n cancel",
+                    self.zones[self.selected].name().to_lowercase()
                 ))
                 .wrap(Wrap { trim: true })
                 .block(theme::panel("").title(" remove clock "))
@@ -394,7 +398,7 @@ mod tests {
                 .iter()
                 .map(|c| c.symbol())
                 .collect();
-            assert!(text.contains("Tokyo"));
+            assert!(text.contains("tokyo"));
             if width == 100 {
                 assert!(text.contains('█'));
             }

@@ -12,14 +12,14 @@ pub const TIMERS: &[(&str, &str)] = &[
     ("d", "delete"),
     ("e", "edit"),
     ("f", "favorite"),
-    ("J/K", "move ↓/↑"),
     ("n", "new"),
     ("q", "quit"),
     ("r", "reset"),
     ("s", "sort by use"),
-    ("Space", "start/pause"),
     ("/", "jump"),
     ("↑/↓", "select"),
+    ("space", "start/pause"),
+    ("alt+↑/↓", "reorder"),
 ];
 pub const CLOCKS: &[(&str, &str)] = &[
     ("d", "remove"),

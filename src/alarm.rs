@@ -61,7 +61,7 @@ impl Alarm {
         {
             self.child = None;
             if !status.success() {
-                return Err(io::Error::other("Alarm player failed"));
+                return Err(io::Error::other("alarm player failed"));
             }
         }
         Ok(())
