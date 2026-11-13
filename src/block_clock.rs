@@ -8,13 +8,13 @@ use ratatui::{
 
 const DIGITS: [[&str; 5]; 10] = [
     ["111", "101", "101", "101", "111"],
-    ["010", "110", "010", "010", "111"],
+    ["110", "010", "010", "010", "010"],
     ["111", "001", "111", "100", "111"],
     ["111", "001", "111", "001", "111"],
     ["101", "101", "111", "001", "001"],
     ["111", "100", "111", "001", "111"],
     ["111", "100", "111", "101", "111"],
-    ["111", "001", "010", "010", "010"],
+    ["111", "001", "001", "001", "001"],
     ["111", "101", "111", "101", "111"],
     ["111", "101", "111", "001", "111"],
 ];
@@ -22,7 +22,6 @@ const DIGITS: [[&str; 5]; 10] = [
 fn pixels(time: &str, scale: usize) -> String {
     // Two deliberate sizes: 5 rows, or a modest 7 rows. Never fill the screen.
     let on = "█".repeat(scale + 1);
-    let off = " ".repeat(scale + 1);
     let gap = " ";
     (0..5)
         .flat_map(|row| {
@@ -32,18 +31,16 @@ fn pixels(time: &str, scale: usize) -> String {
                     if let Some(digit) = c.to_digit(10) {
                         DIGITS[digit as usize][row]
                             .chars()
-                            .map(|pixel| {
-                                if pixel == '1' {
-                                    on.as_str()
-                                } else {
-                                    off.as_str()
-                                }
+                            .enumerate()
+                            .map(|(column, pixel)| {
+                                let cell = if pixel == '1' { "█" } else { " " };
+                                cell.repeat(scale + 1 + usize::from(column == 1))
                             })
                             .collect::<String>()
                     } else if c == ':' && (row == 1 || row == 3) {
                         on.clone()
                     } else {
-                        off.clone()
+                        " ".repeat(scale + 1)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -122,12 +119,15 @@ pub fn small_digits(count: &str) -> Vec<String> {
                             let top = glyph[pair * 2].as_bytes()[column] == b'1';
                             let bottom =
                                 pair * 2 + 1 < 5 && glyph[pair * 2 + 1].as_bytes()[column] == b'1';
-                            match (top, bottom) {
+                            let pixel = match (top, bottom) {
                                 (true, true) => '█',
                                 (true, false) => '▀',
                                 (false, true) => '▄',
                                 (false, false) => ' ',
-                            }
+                            };
+                            pixel
+                                .to_string()
+                                .repeat(1 + usize::from(glyph[0].len() == 3 && column == 1))
                         })
                         .collect::<String>()
                 })
@@ -159,13 +159,13 @@ mod tests {
         assert_eq!(scale_for(Rect::new(0, 0, 240, 80), "12:34"), 2);
         assert_eq!(ratatui::text::Text::from(pixels("12:34", 2)).height(), 7);
         assert_eq!(scale_for(Rect::new(0, 0, 96, 5), "12:34"), 1);
-        assert_eq!(scale_for(Rect::new(0, 0, 32, 20), "12:34"), 1);
+        assert_eq!(scale_for(Rect::new(0, 0, 34, 20), "12:34"), 1);
     }
     #[test]
     fn clock_scales_to_available_space() {
         for (width, height, time, large) in [
-            (32, 6, "12:34", true),
-            (56, 5, "999:59:59", true),
+            (34, 6, "12:34", true),
+            (62, 5, "999:59:59", true),
             (64, 14, "12:34", true),
             (96, 20, "12:34", true),
             (24, 5, "12:34", false),

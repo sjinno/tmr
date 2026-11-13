@@ -394,8 +394,8 @@ impl App {
         let saved_label = self.timers.len().to_string();
         let running_label = running.to_string();
         let counts = Layout::horizontal([
-            Constraint::Length((saved_label.len() as u16 * 4 + 3).max(9)),
-            Constraint::Length((running_label.len() as u16 * 4 + 3).max(11)),
+            Constraint::Length((saved_label.len() as u16 * 5 + 3).max(9)),
+            Constraint::Length((running_label.len() as u16 * 5 + 3).max(11)),
             Constraint::Min(0),
         ])
         .spacing(1)
