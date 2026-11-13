@@ -536,7 +536,9 @@ impl App {
                 .margin(1)
                 .split(inside);
                 f.render_widget(
-                    Paragraph::new(t.label()).style(Style::default().fg(ACCENT).bold()),
+                    Paragraph::new(t.label())
+                        .centered()
+                        .style(Style::default().fg(ACCENT).bold()),
                     parts[0],
                 );
                 if memo_height > 0 {
