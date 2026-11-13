@@ -32,6 +32,7 @@ tmr
 | `f` | Toggle favorite |
 | `J` / `K` | Move selected timer down / up in your ranking |
 | `s` | Sort favorites first, then by number of starts |
+| `c` | Open world clocks |
 | `q` / `Ctrl-C` | Save and quit |
 
 In the timer form, use `Tab` to switch fields, `Backspace` to erase,
@@ -70,6 +71,17 @@ is `~/Library/Application Support/tmr/timers.json`; on Linux it is usually
 `~/.local/share/tmr/timers.json`. Set `TMR_DATA_FILE` to override the full file
 path. Countdowns reopen at their full duration. Invalid saved files produce an
 error without overwriting the original. Run one instance per data file.
+
+Press `c` for world-clock tiles with block digits, local dates, and UTC offsets.
+In this view, `n` opens a picker with popular locations. Type a city like
+`New York` or `Tokyo`, or an IANA timezone such as `Europe/London`, to search
+the full timezone list. Use arrows and `Enter` to add a location. Named zones
+automatically follow daylight-saving changes. Arrows select tiles, `d` removes
+the selected clock with confirmation, and `t` returns to the main timer
+page. `c` and `Esc` also return to timers.
+Timers and stopwatch alerts continue in the clock view. Saved locations live
+in `timers.clocks.json` beside the timer data file. On smaller terminals,
+selecting a tile brings its page into view, and digits shrink to fit.
 
 ## Development
 

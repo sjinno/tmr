@@ -3,7 +3,9 @@ mod alarm;
 mod awake;
 mod block_clock;
 mod model;
+mod shortcuts;
 mod storage;
+mod world_clock;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use model::{Timer, parse_duration};
@@ -24,6 +26,7 @@ const BG: Color = Color::Reset;
 
 enum Mode {
     Browse,
+    Clocks,
     Choose {
         stopwatch: bool,
     },
@@ -44,6 +47,7 @@ enum Mode {
 }
 struct App {
     timers: Vec<Timer>,
+    clocks: world_clock::WorldClocks,
     selected: usize,
     mode: Mode,
     status: String,
@@ -52,7 +56,9 @@ struct App {
 }
 impl App {
     fn persist(&mut self) -> bool {
-        match storage::save(&self.path, &self.timers) {
+        match storage::save(&self.path, &self.timers)
+            .and_then(|()| self.clocks.save(&self.path.with_extension("clocks.json")))
+        {
             Ok(()) => true,
             Err(e) => {
                 self.status =
@@ -65,7 +71,24 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return self.persist();
         }
+        if matches!(self.mode, Mode::Clocks) {
+            if self.clocks.browsing() {
+                match key.code {
+                    KeyCode::Char('t' | 'c') | KeyCode::Esc => {
+                        self.mode = Mode::Browse;
+                        return false;
+                    }
+                    KeyCode::Char('q') => return self.persist(),
+                    _ => {}
+                }
+            }
+            if self.clocks.key(key) {
+                self.persist();
+            }
+            return false;
+        }
         match &mut self.mode {
+            Mode::Clocks => unreachable!(),
             Mode::Choose { stopwatch } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
                 KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::BackTab => {
@@ -190,6 +213,7 @@ impl App {
                 _ => {}
             },
             Mode::Browse => match key.code {
+                KeyCode::Char('c') => self.mode = Mode::Clocks,
                 KeyCode::Char('/') => {
                     if self.timers.is_empty() {
                         self.status = "No timers yet. Press n to create one.".into();
@@ -280,11 +304,18 @@ impl App {
             );
             return;
         }
+        if matches!(self.mode, Mode::Clocks) {
+            self.clocks.draw(f, &self.status);
+            return;
+        }
         let rows = Layout::vertical([
-            Constraint::Length(3),
+            Constraint::Length(if area.height < 22 { 2 } else { 3 }),
             Constraint::Min(5),
-            Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(if area.height < 22 { 1 } else { 3 }),
+            Constraint::Length(shortcuts::height(
+                area.width.saturating_sub(2),
+                shortcuts::TIMERS,
+            )),
         ])
         .margin(1)
         .split(area);
@@ -538,10 +569,11 @@ impl App {
                 .wrap(Wrap { trim: true }),
             rows[2],
         );
-        f.render_widget(Paragraph::new("n new   Space start/pause   r reset   e edit   d delete\n↑/↓ select   / jump   f favorite   J/K rank   s sort   q quit").style(Style::default().fg(MUTED)), rows[3]);
+        shortcuts::render(f, rows[3], shortcuts::TIMERS);
         match &self.mode {
+            Mode::Clocks => unreachable!(),
             Mode::Choose { stopwatch } => {
-                let popup = popup(area, 50, 8);
+                let popup = popup(area, 50, 6);
                 f.render_widget(Clear, popup);
                 f.render_widget(
                     Paragraph::new(vec![
@@ -549,7 +581,6 @@ impl App {
                             format!("{} Timer · count down", if !stopwatch { "›" } else { " " }),
                             Style::default().fg(if !stopwatch { ACCENT } else { MUTED }),
                         )),
-                        Line::from(""),
                         Line::from(Span::styled(
                             format!(
                                 "{} Stopwatch · count up",
@@ -712,6 +743,7 @@ fn main() -> io::Result<()> {
         .map_err(|e| io::Error::other(format!("Could not load {}: {e}", path.display())))?;
     let mut app = App {
         timers,
+        clocks: world_clock::WorldClocks::load(&path.with_extension("clocks.json"))?,
         selected: 0,
         mode: Mode::Browse,
         status: "Make time for something. Press n to add a timer.".into(),
@@ -779,6 +811,7 @@ mod tests {
         ));
         let mut app = App {
             timers: vec![],
+            clocks: world_clock::WorldClocks::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),
@@ -823,6 +856,7 @@ mod tests {
     #[test]
     fn jump_selects_multi_digit_numbers_without_starting_timers() {
         let mut app = App {
+            clocks: world_clock::WorldClocks::default(),
             timers: (1..=12)
                 .map(|n| Timer::new(format!("Timer {n}"), 60))
                 .collect(),
@@ -866,6 +900,7 @@ mod tests {
         ));
         let mut app = App {
             timers: vec![],
+            clocks: world_clock::WorldClocks::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),
@@ -908,6 +943,7 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend};
         let mut app = App {
             timers: vec![],
+            clocks: world_clock::WorldClocks::default(),
             selected: 0,
             mode: Mode::Browse,
             status: String::new(),

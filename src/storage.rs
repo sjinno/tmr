@@ -28,13 +28,16 @@ pub fn load(path: &Path) -> io::Result<Vec<Timer>> {
     Ok(timers)
 }
 pub fn save(path: &Path, timers: &[Timer]) -> io::Result<()> {
+    write_json(path, timers)
+}
+pub fn write_json(path: &Path, value: &(impl serde::Serialize + ?Sized)) -> io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
     let temporary = path.with_extension("json.tmp");
     fs::write(
         &temporary,
-        serde_json::to_vec_pretty(timers).map_err(io::Error::other)?,
+        serde_json::to_vec_pretty(value).map_err(io::Error::other)?,
     )?;
     fs::rename(temporary, path)
 }

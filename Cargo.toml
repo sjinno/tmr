@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4"
+chrono-tz = "0.10"
 crossterm = "0.29"
 directories = "6.0.0"
 ratatui = "0.30"
