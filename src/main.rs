@@ -353,7 +353,7 @@ impl App {
             let panel = theme::panel(title).border_style(Style::default().fg(color));
             let inner = panel.inner(bounds);
             f.render_widget(panel, bounds);
-            block_clock::render_count(f, inner, label, color);
+            block_clock::render_small(f, inner, label, color);
         }
         let columns = if area.width >= 85 {
             Layout::horizontal([
@@ -380,40 +380,46 @@ impl App {
                 } else {
                     "ready"
                 };
-                ListItem::new(vec![
-                    Line::from(vec![
-                        Span::styled(
-                            format!(" {:02} {} ", i + 1, if t.favorite { "★" } else { "·" }),
-                            Style::default().fg(ACCENT),
-                        ),
-                        Span::styled(t.label(), Style::default().bold()),
-                    ]),
-                    Line::from(vec![
-                        Span::raw(format!("  {}  ", t.display(now))),
-                        Span::styled(
-                            format!("{state:5}"),
-                            if t.started.is_some() {
-                                Style::default().fg(MINT).bold()
-                            } else {
-                                Style::default()
-                            },
-                        ),
-                        Span::raw(format!("  ·  {} uses", t.uses)),
-                    ])
-                    .style(Style::default().fg(if t.finished {
-                        ACCENT
-                    } else {
-                        MUTED
-                    })),
-                    Line::from(Span::styled(
-                        if t.memo.is_empty() {
-                            String::new()
-                        } else {
-                            format!("  {}", t.memo)
-                        },
+                let id = block_clock::small_digits(&format!("{:02}", i + 1));
+                let id_width = id[0].chars().count();
+                let title = Line::from(vec![
+                    Span::raw(if t.favorite { "★ " } else { "" }),
+                    Span::styled(t.label(), Style::default().bold()),
+                ]);
+                let timing = Line::from(vec![
+                    Span::styled(
+                        t.display(now),
+                        Style::default().fg(if t.started.is_some() { MINT } else { MUTED }),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(
+                        state,
+                        Style::default()
+                            .fg(if t.started.is_some() { MINT } else { MUTED })
+                            .bold(),
+                    ),
+                ]);
+                let details = Line::styled(format!("{} uses", t.uses), Style::default().fg(MUTED));
+                let mut lines: Vec<Line> = [title, timing, details]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, text)| {
+                        let mut spans = vec![
+                            Span::styled(id[row].clone(), Style::default().fg(ACCENT)),
+                            Span::raw("  "),
+                        ];
+                        spans.extend(text.spans);
+                        Line::from(spans)
+                    })
+                    .collect();
+                if !t.memo.is_empty() {
+                    lines.push(Line::styled(
+                        format!("{}{}", " ".repeat(id_width + 2), t.memo),
                         Style::default().fg(MUTED),
-                    )),
-                ])
+                    ));
+                }
+                lines.push(Line::default());
+                ListItem::new(lines)
             })
             .collect();
         self.list.select(if self.timers.is_empty() {
@@ -430,7 +436,7 @@ impl App {
             f.render_stateful_widget(
                 List::new(items)
                     .block(block)
-                    .highlight_style(Style::default().fg(ACCENT).bold())
+                    .highlight_style(Style::default().bold())
                     .highlight_symbol("▎"),
                 columns[0],
                 &mut self.list,
@@ -1022,9 +1028,25 @@ mod tests {
             .collect();
         assert!(text.contains("nothing on the clock"));
         app.timers.push(Timer::new("Focus".into(), 1500));
+        app.timers[0].toggle(Instant::now());
         app.timers[0].memo = "Take a break afterward".into();
         terminal.draw(|f| app.draw(f)).unwrap();
         let buffer = terminal.backend().buffer();
+        let run_position = (8..22)
+            .find_map(|y| {
+                (2..30)
+                    .find(|&x| {
+                        buffer[(x, y)].symbol() == "r"
+                            && buffer[(x + 1, y)].symbol() == "u"
+                            && buffer[(x + 2, y)].symbol() == "n"
+                    })
+                    .map(|x| (x, y))
+            })
+            .expect("running label in the selected timer row");
+        assert_eq!(buffer[run_position].fg, MINT);
+        let (x, y) = run_position;
+        // The countdown immediately precedes the two spaces before `run`.
+        assert_eq!(buffer[(x - 3, y)].fg, MINT);
         let right_panel: String = (4..26)
             .flat_map(|y| (34..99).map(move |x| buffer[(x, y)].symbol()))
             .collect();

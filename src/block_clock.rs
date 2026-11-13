@@ -106,15 +106,18 @@ fn draw(frame: &mut Frame, area: Rect, text: ratatui::text::Text<'_>, color: Col
     );
 }
 
-pub fn render_count(frame: &mut Frame, area: Rect, count: &str, color: Color) {
-    let lines: Vec<String> = (0..3)
+pub fn small_digits(count: &str) -> Vec<String> {
+    (0..3)
         .map(|pair| {
             count
                 .chars()
-                .filter_map(|digit| digit.to_digit(10))
-                .map(|digit| {
-                    let glyph = DIGITS[digit as usize];
-                    (0..3)
+                .filter_map(|character| match character.to_digit(10) {
+                    Some(digit) => Some(DIGITS[digit as usize]),
+                    None if character == ':' => Some(["0", "1", "0", "1", "0"]),
+                    _ => None,
+                })
+                .map(|glyph| {
+                    (0..glyph[0].len())
                         .map(|column| {
                             let top = glyph[pair * 2].as_bytes()[column] == b'1';
                             let bottom =
@@ -131,7 +134,11 @@ pub fn render_count(frame: &mut Frame, area: Rect, count: &str, color: Color) {
                 .collect::<Vec<_>>()
                 .join(" ")
         })
-        .collect();
+        .collect()
+}
+
+pub fn render_small(frame: &mut Frame, area: Rect, count: &str, color: Color) {
+    let lines = small_digits(count);
     let text = ratatui::text::Text::from(lines.join("\n"));
     let text = if area.height >= 3 && text.width() <= usize::from(area.width) {
         text
