@@ -71,8 +71,8 @@ Choose **pomodoro** to alternate work and rest intervals automatically. Both
 **interval** (work) and **rest interval** are required. For example, enter `25m`
 and `5m`. Names and memos are optional, and saving starts the run immediately.
 
-The main display counts total active time upward. The list and gauge show the
-current work or rest phase, and the gauge tracks progress through that phase.
+The display counts down the remaining time in the current work or rest phase.
+The list names the phase, and the gauge tracks progress through it.
 An alarm plays at each transition. Pausing freezes elapsed time and the phase
 schedule. Resetting returns to the start of a work interval. Intervals and
 memos are saved with the preset, and reopening starts elapsed time at zero.

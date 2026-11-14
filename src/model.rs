@@ -68,6 +68,9 @@ impl Timer {
         if self.finished {
             return "fin".into();
         }
+        if let Some((_, elapsed, seconds)) = self.phase(now) {
+            return clock(Duration::from_secs(seconds).saturating_sub(elapsed));
+        }
         let value = self.left(now);
         clock(if self.stopwatch {
             Duration::from_secs(value.as_secs())
@@ -284,12 +287,15 @@ mod tests {
         timer.reset();
         timer.toggle(now);
         assert_eq!(timer.phase(now).unwrap().0, "work");
+        assert_eq!(timer.display(now), "00:30");
+        assert_eq!(timer.display(now + Duration::from_secs(29)), "00:01");
         assert!(!timer.tick(now + Duration::from_secs(29)));
         assert_eq!(
             timer.completed_work_intervals(now + Duration::from_secs(29)),
             Some(0)
         );
         assert!(timer.tick(now + Duration::from_secs(30)));
+        assert_eq!(timer.display(now + Duration::from_secs(30)), "00:10");
         assert_eq!(
             timer.completed_work_intervals(now + Duration::from_secs(30)),
             Some(1)
@@ -300,6 +306,7 @@ mod tests {
         );
         assert!(!timer.tick(now + Duration::from_secs(30)));
         assert!(timer.tick(now + Duration::from_secs(40)));
+        assert_eq!(timer.display(now + Duration::from_secs(40)), "00:30");
         assert_eq!(
             timer.completed_work_intervals(now + Duration::from_secs(40)),
             Some(1)
@@ -310,7 +317,7 @@ mod tests {
         );
         timer.toggle(now + Duration::from_secs(45));
         assert!(!timer.tick(now + Duration::from_secs(99)));
-        assert_eq!(timer.display(now + Duration::from_secs(99)), "00:45");
+        assert_eq!(timer.display(now + Duration::from_secs(99)), "00:25");
         timer.toggle(now + Duration::from_secs(100));
         assert!(!timer.tick(now + Duration::from_secs(124)));
         assert!(timer.tick(now + Duration::from_secs(125)));
@@ -318,7 +325,7 @@ mod tests {
             timer.phase(now + Duration::from_secs(125)).unwrap().0,
             "rest"
         );
-        assert_eq!(timer.display(now + Duration::from_secs(125)), "01:10");
+        assert_eq!(timer.display(now + Duration::from_secs(125)), "00:10");
         assert_eq!(
             timer.completed_work_intervals(now + Duration::from_secs(125)),
             Some(2)
@@ -328,7 +335,7 @@ mod tests {
         assert!(!timer.tick(now + Duration::from_secs(1000)));
         assert!(timer.started.is_some());
         timer.reset();
-        assert_eq!(timer.display(now), "00:00");
+        assert_eq!(timer.display(now), "00:30");
         assert_eq!(timer.completed_work_intervals(now), Some(0));
         assert_eq!(timer.phase(now).unwrap().0, "work");
     }

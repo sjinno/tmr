@@ -761,8 +761,8 @@ impl App {
                     values.insert(2, rest);
                 }
                 if let Some(count) = &completed {
-                    headers.push("intervals");
-                    values.push(count);
+                    headers.insert(headers.len() - 1, "intervals");
+                    values.insert(values.len() - 1, count);
                 }
                 let mut cell_width = headers
                     .iter()
@@ -774,7 +774,8 @@ impl App {
                     && completed.is_some()
                 {
                     headers[0] = "start";
-                    *headers.last_mut().expect("details headers") = "done";
+                    let intervals_column = headers.len() - 2;
+                    headers[intervals_column] = "done";
                     cell_width = headers
                         .iter()
                         .chain(values.iter())
