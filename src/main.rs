@@ -463,7 +463,13 @@ impl App {
                             .bold(),
                     ),
                 ]);
-                let details = Line::styled(format!("{} uses", t.uses), Style::default().fg(MUTED));
+                let details = Line::from(vec![
+                    Span::styled(
+                        if t.stopwatch { "stopwatch" } else { "timer" },
+                        Style::default().fg(if t.stopwatch { MINT } else { ACCENT }),
+                    ),
+                    Span::styled(format!(" · {} uses", t.uses), Style::default().fg(MUTED)),
+                ]);
                 let mut lines: Vec<Line> = [title, timing, details]
                     .into_iter()
                     .enumerate()
