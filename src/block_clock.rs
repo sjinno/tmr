@@ -28,8 +28,17 @@ fn pixels(time: &str, scale: usize) -> String {
             let line = time
                 .chars()
                 .map(|c| {
-                    if let Some(digit) = c.to_digit(10) {
-                        DIGITS[digit as usize][row]
+                    let glyph = c
+                        .to_digit(10)
+                        .map(|digit| DIGITS[digit as usize])
+                        .or(match c {
+                            'f' => Some(["011", "010", "111", "010", "010"]),
+                            'i' => Some(["010", "000", "010", "010", "010"]),
+                            'n' => Some(["000", "000", "111", "101", "101"]),
+                            _ => None,
+                        });
+                    if let Some(glyph) = glyph {
+                        glyph[row]
                             .chars()
                             .enumerate()
                             .map(|(column, pixel)| {
@@ -164,6 +173,7 @@ mod tests {
     #[test]
     fn clock_scales_to_available_space() {
         for (width, height, time, large) in [
+            (34, 6, "fin", true),
             (34, 6, "12:34", true),
             (62, 5, "999:59:59", true),
             (64, 14, "12:34", true),

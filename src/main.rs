@@ -474,7 +474,9 @@ impl App {
                     Span::styled(t.label(), Style::default().bold()),
                 ]);
                 let resting = matches!(t.phase(now), Some(("rest", _, _)));
-                let timing_color = if t.started.is_none() {
+                let timing_color = if t.finished {
+                    Color::LightRed
+                } else if t.started.is_none() {
                     MUTED
                 } else if resting {
                     PEACH
@@ -665,7 +667,13 @@ impl App {
                     f,
                     parts[1],
                     &t.display(now),
-                    if resting { PEACH } else { Color::Reset },
+                    if t.finished {
+                        Color::LightRed
+                    } else if resting {
+                        PEACH
+                    } else {
+                        Color::Reset
+                    },
                 );
                 let ratio = t.progress(now);
                 f.render_widget(

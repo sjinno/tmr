@@ -65,6 +65,9 @@ impl Timer {
         })
     }
     pub fn display(&self, now: Instant) -> String {
+        if self.finished {
+            return "fin".into();
+        }
         let value = self.left(now);
         clock(if self.stopwatch {
             Duration::from_secs(value.as_secs())
@@ -431,8 +434,10 @@ mod tests {
         assert_eq!(t.uses, 1);
         assert!(!t.tick(now + Duration::from_secs(14)));
         assert!(t.tick(now + Duration::from_secs(15)));
+        assert_eq!(t.display(now + Duration::from_secs(15)), "fin");
         assert!(!t.tick(now + Duration::from_secs(16)));
         t.toggle(now + Duration::from_secs(17));
+        assert_ne!(t.display(now + Duration::from_secs(17)), "fin");
         assert_eq!(t.uses, 2);
         assert_eq!(t.left(now + Duration::from_secs(17)).as_secs(), 10);
     }
