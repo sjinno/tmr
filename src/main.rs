@@ -886,6 +886,9 @@ impl App {
             } => {
                 let popup = popup(area, 66, if rest.is_some() { 18 } else { 16 });
                 f.render_widget(Clear, popup);
+                let input = |value: &str, index: usize| {
+                    format!("{value}{}", if *field == index { "▏" } else { "" })
+                };
                 let mut text = vec![
                     Line::from(""),
                     Line::from(Span::styled(
@@ -893,7 +896,7 @@ impl App {
                             " {} {:15}  {}",
                             if *field == 0 { "›" } else { " " },
                             "name (optional)",
-                            name
+                            input(name, 0)
                         ),
                         Style::default().fg(if *field == 0 { ACCENT } else { Color::Reset }),
                     )),
@@ -909,7 +912,7 @@ impl App {
                             } else {
                                 "duration"
                             },
-                            duration
+                            input(duration, 1)
                         ),
                         Style::default().fg(if *field == 1 { ACCENT } else { Color::Reset }),
                     )),
@@ -930,7 +933,7 @@ impl App {
                                 " "
                             },
                             "memo (optional)",
-                            memo
+                            input(memo, if rest.is_some() { 3 } else { 2 })
                         ),
                         Style::default().fg(if *field == if rest.is_some() { 3 } else { 2 } {
                             ACCENT
@@ -953,7 +956,7 @@ impl App {
                                 " {} {:15}  {}",
                                 if *field == 2 { "›" } else { " " },
                                 "rest interval",
-                                rest
+                                input(rest, 2)
                             ),
                             Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
                         ),
