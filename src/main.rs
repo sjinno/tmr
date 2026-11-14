@@ -884,26 +884,32 @@ impl App {
                 field,
                 error,
             } => {
-                let popup = popup(area, 66, if rest.is_some() { 18 } else { 16 });
+                let desired_height = if rest.is_some() { 24 } else { 20 };
+                let popup = popup(
+                    area,
+                    62,
+                    desired_height.min(area.height.saturating_sub(2).max(16)),
+                );
                 f.render_widget(Clear, popup);
                 let title = if rest.is_some() {
                     if *edit {
-                        " edit pomodoro · saving resets it "
+                        " edit pomodoro "
                     } else {
                         " new pomodoro "
                     }
                 } else if *stopwatch {
                     if *edit {
-                        " edit stopwatch · saving resets it "
+                        " edit stopwatch "
                     } else {
                         " new stopwatch "
                     }
                 } else if *edit {
-                    " edit timer · saving resets it "
+                    " edit timer "
                 } else {
                     " new timer "
                 };
                 let panel = theme::panel(title)
+                    .padding(Padding::horizontal(2))
                     .border_style(Style::default().fg(ACCENT))
                     .style(Style::default().bg(BG));
                 let inner = panel.inner(popup);
@@ -925,44 +931,55 @@ impl App {
                     fields.push(("rest interval", rest.as_str()));
                 }
                 fields.push(("memo (optional)", memo.as_str()));
-                let help_height = if inner.height >= 16 { 4 } else { 2 };
-                let [fields_area, _, help] = Layout::vertical([
-                    Constraint::Length(fields.len() as u16 * 3),
+                let roomy = usize::from(inner.height) >= fields.len() * 4 + 4;
+                let field_gap = u16::from(roomy);
+                let help_height = if roomy { 4 } else { 2 };
+                let [_, fields_area, _, help] = Layout::vertical([
+                    Constraint::Length(u16::from(roomy)),
+                    Constraint::Length(
+                        fields.len() as u16 * 3 + fields.len().saturating_sub(1) as u16 * field_gap,
+                    ),
                     Constraint::Min(0),
                     Constraint::Length(help_height),
                 ])
                 .areas(inner);
-                let slots =
-                    Layout::vertical(vec![Constraint::Length(3); fields.len()]).split(fields_area);
+                let slots = Layout::vertical(vec![Constraint::Length(3); fields.len()])
+                    .spacing(field_gap)
+                    .split(fields_area);
                 for (index, ((label, value), &slot)) in fields.iter().zip(slots.iter()).enumerate()
                 {
                     let focused = index == *field;
-                    if focused {
-                        let border = theme::panel(format!(" {label} "))
-                            .border_style(Style::default().fg(ACCENT));
-                        let input_area = border.inner(slot);
-                        f.render_widget(border, slot);
-                        let text = format!("{value}▏");
-                        let scroll = Span::raw(text.as_str())
-                            .width()
-                            .saturating_sub(usize::from(input_area.width))
-                            as u16;
-                        f.render_widget(
-                            Paragraph::new(text)
-                                .scroll((0, scroll))
-                                .style(Style::default().fg(ACCENT)),
-                            input_area,
-                        );
-                    } else {
-                        let inset = slot.inner(Margin::new(2, 0));
-                        f.render_widget(
-                            Paragraph::new(vec![
-                                Line::styled(label.to_string(), Style::default().fg(MUTED)),
-                                Line::from(value.to_string()),
-                            ]),
-                            inset,
+                    let label = label.trim_end_matches(" (optional)");
+                    let color = if focused { ACCENT } else { MUTED };
+                    let mut border =
+                        theme::panel(format!(" {}{label} ", if focused { "› " } else { "" }))
+                            .border_style(if focused {
+                                Style::default().fg(color)
+                            } else {
+                                Style::default().fg(color).dim()
+                            });
+                    if index == 0 || index == fields.len() - 1 {
+                        border = border.title_top(
+                            Line::from(" optional ")
+                                .right_aligned()
+                                .style(Style::default().fg(MUTED)),
                         );
                     }
+                    let input_area = border.inner(slot);
+                    f.render_widget(border, slot);
+                    let mut spans = vec![Span::raw(value.to_string())];
+                    if focused {
+                        spans.push(Span::styled("▏", Style::default().fg(ACCENT)));
+                    } else if value.is_empty() {
+                        spans.push(Span::styled("—", Style::default().fg(MUTED).dim()));
+                    }
+                    let text = Line::from(spans);
+                    let scroll = if focused {
+                        text.width().saturating_sub(usize::from(input_area.width)) as u16
+                    } else {
+                        0
+                    };
+                    f.render_widget(Paragraph::new(text).scroll((0, scroll)), input_area);
                 }
                 let hint = if rest.is_some() {
                     "intervals required · e.g. 25m / 5m"
@@ -973,21 +990,33 @@ impl App {
                 };
                 let mut lines = vec![];
                 if help.height >= 4 {
-                    lines.push(Line::styled(hint, Style::default().fg(MUTED)));
+                    lines.push(Line::styled(hint, Style::default().fg(MUTED)).centered());
                     lines.push(Line::default());
                 }
                 lines.push(if error.is_empty() {
                     Line::styled(
-                        if help.height >= 4 { "" } else { hint },
+                        if *edit {
+                            "saving resets this run"
+                        } else {
+                            "starts as soon as you save"
+                        },
                         Style::default().fg(MUTED),
                     )
+                    .centered()
                 } else {
                     Line::styled(error.as_str(), Style::default().fg(Color::LightRed))
                 });
-                lines.push(Line::styled(
-                    "tab switch · backspace erase · enter save · esc cancel",
-                    Style::default().fg(MUTED),
-                ));
+                lines.push(
+                    Line::from(vec![
+                        Span::styled("tab", Style::default().fg(ACCENT).bold()),
+                        Span::styled(" next   ", Style::default().fg(MUTED)),
+                        Span::styled("enter", Style::default().fg(ACCENT).bold()),
+                        Span::styled(" save   ", Style::default().fg(MUTED)),
+                        Span::styled("esc", Style::default().fg(ACCENT).bold()),
+                        Span::styled(" cancel", Style::default().fg(MUTED)),
+                    ])
+                    .centered(),
+                );
                 f.render_widget(Paragraph::new(lines), help);
             }
             Mode::Delete => {
