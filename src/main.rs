@@ -835,18 +835,21 @@ impl App {
                         .gauge_style(
                             Style::default()
                                 .fg(if resting { PEACH } else { ACCENT })
-                                .bg(BG),
+                                .bg(MUTED),
                         )
                         .ratio(ratio)
-                        .label(if let Some((phase, _, _)) = t.phase(now) {
-                            phase
-                        } else if t.finished {
-                            "complete"
-                        } else if t.started.is_some() {
-                            "running"
-                        } else {
-                            "space to start / resume"
-                        }),
+                        .label(Span::styled(
+                            if let Some((phase, _, _)) = t.phase(now) {
+                                phase
+                            } else if t.finished {
+                                "complete"
+                            } else if t.started.is_some() {
+                                "running"
+                            } else {
+                                "space to start / resume"
+                            },
+                            Style::default().fg(Color::Rgb(25, 27, 35)).bold(),
+                        )),
                     gauge_area,
                 );
                 let started = t
