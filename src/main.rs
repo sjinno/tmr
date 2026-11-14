@@ -699,9 +699,7 @@ impl App {
                     .started_at
                     .map(format_start_time)
                     .unwrap_or_else(|| "--:--".into());
-                let duration = if let Some((_, _, seconds)) = t.phase(now) {
-                    model::clock(Duration::from_secs(seconds))
-                } else if t.stopwatch && t.seconds == 0 {
+                let duration = if t.stopwatch && t.seconds == 0 {
                     "off".into()
                 } else {
                     model::clock(Duration::from_secs(t.seconds))
@@ -709,8 +707,8 @@ impl App {
                 let used = t.uses.to_string();
                 let mut headers = vec![
                     "started at",
-                    if let Some((phase, _, _)) = t.phase(now) {
-                        phase
+                    if t.rest_seconds.is_some() {
+                        "work"
                     } else if t.stopwatch {
                         "alert every"
                     } else {
@@ -722,6 +720,13 @@ impl App {
                     .completed_work_intervals(now)
                     .map(|count| count.to_string());
                 let mut values = vec![started.as_str(), duration.as_str(), used.as_str()];
+                let rest = t
+                    .rest_seconds
+                    .map(|seconds| model::clock(Duration::from_secs(seconds)));
+                if let Some(rest) = &rest {
+                    headers.insert(2, "rest");
+                    values.insert(2, rest);
+                }
                 if let Some(count) = &completed {
                     headers.push("intervals");
                     values.push(count);
@@ -736,7 +741,7 @@ impl App {
                     && completed.is_some()
                 {
                     headers[0] = "start";
-                    headers[3] = "done";
+                    *headers.last_mut().expect("details headers") = "done";
                     cell_width = headers
                         .iter()
                         .chain(values.iter())
@@ -744,10 +749,14 @@ impl App {
                         .max()
                         .unwrap_or(0);
                 }
+                let padding =
+                    usize::from((cell_width + 3) * headers.len() < usize::from(parts[6].width));
                 let widths = vec![cell_width; headers.len()];
                 let border = |left: char, joint: char, right: char| {
-                    let segments: Vec<_> =
-                        widths.iter().map(|width| "─".repeat(width + 2)).collect();
+                    let segments: Vec<_> = widths
+                        .iter()
+                        .map(|width| "─".repeat(width + padding * 2))
+                        .collect();
                     Line::styled(
                         format!("{left}{}{right}", segments.join(&joint.to_string())),
                         Style::default().fg(MUTED),
@@ -757,7 +766,11 @@ impl App {
                     let mut spans = vec![Span::styled("│", Style::default().fg(MUTED))];
                     for (cell, width) in cells.iter().zip(&widths) {
                         spans.push(Span::styled(
-                            format!(" {cell:^width$} ", width = *width),
+                            format!(
+                                "{space}{cell:^width$}{space}",
+                                space = " ".repeat(padding),
+                                width = *width
+                            ),
                             style,
                         ));
                         spans.push(Span::styled("│", Style::default().fg(MUTED)));
