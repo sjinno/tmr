@@ -591,7 +591,8 @@ impl App {
                     memo: Text<'static>,
                     height: u16,
                 }
-                let content_width = list.width.saturating_sub(6);
+                let card_width = list.width.min(86);
+                let content_width = card_width.saturating_sub(6);
                 let active: Vec<_> = self
                     .timers
                     .iter()
@@ -698,7 +699,7 @@ impl App {
                     let bounds = Rect::new(
                         list.x,
                         y,
-                        list.width,
+                        card_width,
                         card.height.min(list.bottom().saturating_sub(y)),
                     );
                     let timer = card.timer;
@@ -737,6 +738,7 @@ impl App {
                         Paragraph::new(timer.display(now)).style(Style::default().fg(color).bold()),
                         countdown,
                     );
+                    let gauge = Rect::new(gauge.x, gauge.y, gauge.width.min(80), gauge.height);
                     let filled = (timer.progress(now) * f64::from(gauge.width)).round() as usize;
                     f.render_widget(
                         Paragraph::new(Line::from(vec![
@@ -815,6 +817,13 @@ impl App {
                     },
                 );
                 let ratio = t.progress(now);
+                let gauge_width = parts[3].width.min(80);
+                let gauge_area = Rect::new(
+                    parts[3].x + (parts[3].width - gauge_width) / 2,
+                    parts[3].y,
+                    gauge_width,
+                    parts[3].height,
+                );
                 f.render_widget(
                     Gauge::default()
                         .gauge_style(
@@ -832,7 +841,7 @@ impl App {
                         } else {
                             "space to start / resume"
                         }),
-                    parts[3],
+                    gauge_area,
                 );
                 let started = t
                     .started_at
