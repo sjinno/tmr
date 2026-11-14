@@ -886,110 +886,109 @@ impl App {
             } => {
                 let popup = popup(area, 66, if rest.is_some() { 18 } else { 16 });
                 f.render_widget(Clear, popup);
-                let input = |value: &str, index: usize| {
-                    format!("{value}{}", if *field == index { "▏" } else { "" })
-                };
-                let mut text = vec![
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        format!(
-                            " {} {:15}  {}",
-                            if *field == 0 { "›" } else { " " },
-                            "name (optional)",
-                            input(name, 0)
-                        ),
-                        Style::default().fg(if *field == 0 { ACCENT } else { Color::Reset }),
-                    )),
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        format!(
-                            " {} {:15}  {}",
-                            if *field == 1 { "›" } else { " " },
-                            if rest.is_some() {
-                                "interval"
-                            } else if *stopwatch {
-                                "alert every"
-                            } else {
-                                "duration"
-                            },
-                            input(duration, 1)
-                        ),
-                        Style::default().fg(if *field == 1 { ACCENT } else { Color::Reset }),
-                    )),
-                    Line::from(if rest.is_some() {
-                        "   required · e.g. 25m / 5m / 30s"
-                    } else if *stopwatch {
-                        "   e.g. 5m / 30s · blank disables alerts"
+                let title = if rest.is_some() {
+                    if *edit {
+                        " edit pomodoro · saving resets it "
                     } else {
-                        "   e.g. 1h / 6m 10s / 100s / 1h30m"
-                    }),
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        format!(
-                            " {} {:15}  {}",
-                            if *field == if rest.is_some() { 3 } else { 2 } {
-                                "›"
-                            } else {
-                                " "
-                            },
-                            "memo (optional)",
-                            input(memo, if rest.is_some() { 3 } else { 2 })
-                        ),
-                        Style::default().fg(if *field == if rest.is_some() { 3 } else { 2 } {
-                            ACCENT
+                        " new pomodoro "
+                    }
+                } else if *stopwatch {
+                    if *edit {
+                        " edit stopwatch · saving resets it "
+                    } else {
+                        " new stopwatch "
+                    }
+                } else if *edit {
+                    " edit timer · saving resets it "
+                } else {
+                    " new timer "
+                };
+                let panel = theme::panel(title)
+                    .border_style(Style::default().fg(ACCENT))
+                    .style(Style::default().bg(BG));
+                let inner = panel.inner(popup);
+                f.render_widget(panel, popup);
+                let mut fields = vec![
+                    ("name (optional)", name.as_str()),
+                    (
+                        if rest.is_some() {
+                            "interval"
+                        } else if *stopwatch {
+                            "alert every"
                         } else {
-                            Color::Reset
-                        }),
-                    )),
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        error.as_str(),
-                        Style::default().fg(Color::LightRed),
-                    )),
-                    Line::from("tab switch · backspace erase · enter save · esc cancel"),
+                            "duration"
+                        },
+                        duration.as_str(),
+                    ),
                 ];
                 if let Some(rest) = rest {
-                    text.insert(
-                        6,
-                        Line::styled(
-                            format!(
-                                " {} {:15}  {}",
-                                if *field == 2 { "›" } else { " " },
-                                "rest interval",
-                                input(rest, 2)
-                            ),
-                            Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
-                        ),
-                    );
-                    text.insert(7, Line::default());
+                    fields.push(("rest interval", rest.as_str()));
                 }
-                f.render_widget(
-                    Paragraph::new(text)
-                        .wrap(Wrap { trim: false })
-                        .block(
-                            theme::panel("")
-                                .title(if rest.is_some() {
-                                    if *edit {
-                                        " edit pomodoro · saving resets it "
-                                    } else {
-                                        " new pomodoro "
-                                    }
-                                } else if *stopwatch {
-                                    if *edit {
-                                        " edit stopwatch · saving resets it "
-                                    } else {
-                                        " new stopwatch "
-                                    }
-                                } else if *edit {
-                                    " edit timer · saving resets it "
-                                } else {
-                                    " new timer "
-                                })
-                                .border_style(Style::default().fg(ACCENT)),
-                        )
-                        .style(Style::default().bg(BG)),
-                    popup,
-                );
+                fields.push(("memo (optional)", memo.as_str()));
+                let help_height = if inner.height >= 16 { 4 } else { 2 };
+                let [fields_area, _, help] = Layout::vertical([
+                    Constraint::Length(fields.len() as u16 * 3),
+                    Constraint::Min(0),
+                    Constraint::Length(help_height),
+                ])
+                .areas(inner);
+                let slots =
+                    Layout::vertical(vec![Constraint::Length(3); fields.len()]).split(fields_area);
+                for (index, ((label, value), &slot)) in fields.iter().zip(slots.iter()).enumerate()
+                {
+                    let focused = index == *field;
+                    if focused {
+                        let border = theme::panel(format!(" {label} "))
+                            .border_style(Style::default().fg(ACCENT));
+                        let input_area = border.inner(slot);
+                        f.render_widget(border, slot);
+                        let text = format!("{value}▏");
+                        let scroll = Span::raw(text.as_str())
+                            .width()
+                            .saturating_sub(usize::from(input_area.width))
+                            as u16;
+                        f.render_widget(
+                            Paragraph::new(text)
+                                .scroll((0, scroll))
+                                .style(Style::default().fg(ACCENT)),
+                            input_area,
+                        );
+                    } else {
+                        let inset = slot.inner(Margin::new(2, 0));
+                        f.render_widget(
+                            Paragraph::new(vec![
+                                Line::styled(label.to_string(), Style::default().fg(MUTED)),
+                                Line::from(value.to_string()),
+                            ]),
+                            inset,
+                        );
+                    }
+                }
+                let hint = if rest.is_some() {
+                    "intervals required · e.g. 25m / 5m"
+                } else if *stopwatch {
+                    "e.g. 30s / 5m · blank disables alerts"
+                } else {
+                    "e.g. 1h / 6m 10s / 100s"
+                };
+                let mut lines = vec![];
+                if help.height >= 4 {
+                    lines.push(Line::styled(hint, Style::default().fg(MUTED)));
+                    lines.push(Line::default());
+                }
+                lines.push(if error.is_empty() {
+                    Line::styled(
+                        if help.height >= 4 { "" } else { hint },
+                        Style::default().fg(MUTED),
+                    )
+                } else {
+                    Line::styled(error.as_str(), Style::default().fg(Color::LightRed))
+                });
+                lines.push(Line::styled(
+                    "tab switch · backspace erase · enter save · esc cancel",
+                    Style::default().fg(MUTED),
+                ));
+                f.render_widget(Paragraph::new(lines), help);
             }
             Mode::Delete => {
                 let popup = popup(area, 58, 7);
