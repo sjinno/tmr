@@ -771,14 +771,20 @@ impl App {
                 } else {
                     (memo_text.height() as u16 + 2).min(5)
                 };
+                let countdown_height = if inside.height >= memo_height + 22 {
+                    7
+                } else {
+                    5
+                };
                 let parts = Layout::vertical([
                     Constraint::Length(if spacious { 2 } else { 1 }),
-                    Constraint::Min(1),
+                    Constraint::Min(0),
+                    Constraint::Length(countdown_height),
+                    Constraint::Length(4),
                     Constraint::Length(gap),
-                    Constraint::Length(1),
-                    Constraint::Length(gap),
-                    Constraint::Length(memo_height),
                     Constraint::Length(5),
+                    Constraint::Length(memo_height),
+                    Constraint::Min(0),
                 ])
                 .margin(1)
                 .split(inside);
@@ -796,17 +802,17 @@ impl App {
                                 .border_style(Style::default().fg(MUTED)),
                         ),
                         Rect::new(
-                            parts[5].x,
-                            parts[5].y,
-                            parts[5].width.min(80),
-                            parts[5].height,
+                            parts[6].x + (parts[6].width - parts[6].width.min(80)) / 2,
+                            parts[6].y,
+                            parts[6].width.min(80),
+                            parts[6].height,
                         ),
                     );
                 }
                 let resting = matches!(t.phase(now), Some(("rest", _, _)));
                 block_clock::render(
                     f,
-                    parts[1],
+                    parts[2],
                     &t.display(now),
                     if t.finished {
                         Color::LightRed
@@ -820,9 +826,9 @@ impl App {
                 let gauge_width = parts[3].width.min(80);
                 let gauge_area = Rect::new(
                     parts[3].x + (parts[3].width - gauge_width) / 2,
-                    parts[3].y,
+                    parts[3].y.saturating_add(3),
                     gauge_width,
-                    parts[3].height,
+                    parts[3].height.saturating_sub(3),
                 );
                 f.render_widget(
                     Gauge::default()
@@ -893,7 +899,7 @@ impl App {
                     .map(|cell| cell.len())
                     .max()
                     .unwrap_or(0);
-                if (cell_width + 3) * headers.len() + 1 > usize::from(parts[6].width) && t.stopwatch
+                if (cell_width + 3) * headers.len() + 1 > usize::from(parts[5].width) && t.stopwatch
                 {
                     headers[0] = "start";
                     if completed.is_some() {
@@ -910,7 +916,7 @@ impl App {
                         .unwrap_or(0);
                 }
                 let padding =
-                    usize::from((cell_width + 3) * headers.len() < usize::from(parts[6].width));
+                    usize::from((cell_width + 3) * headers.len() < usize::from(parts[5].width));
                 let widths = vec![cell_width; headers.len()];
                 let border = |left: char, joint: char, right: char| {
                     let segments: Vec<_> = widths
@@ -946,7 +952,7 @@ impl App {
                         border('╰', '┴', '╯'),
                     ])
                     .centered(),
-                    parts[6],
+                    parts[5],
                 );
             }
         }
