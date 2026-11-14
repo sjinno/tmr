@@ -642,9 +642,9 @@ impl App {
                             ));
                         }
                         details.push(format!("used: {}", timer.uses));
-                        let details = wrap_card_text(&details.join(" · "), content_width);
+                        let details = wrap_card_text(&details.join(" | "), content_width);
                         let memo =
-                            wrap_card_text(&timer.memo, content_width.saturating_sub(4));
+                            wrap_card_text(&timer.memo, content_width.min(80).saturating_sub(4));
                         let memo_height = if timer.memo.is_empty() {
                             0
                         } else {
@@ -749,6 +749,7 @@ impl App {
                         gauge,
                     );
                     if memo_height > 0 {
+                        let memo = Rect::new(memo.x, memo.y, memo.width.min(80), memo.height);
                         f.render_widget(
                             Paragraph::new(card.memo.clone()).block(theme::panel(" memo ")),
                             memo,
@@ -759,11 +760,14 @@ impl App {
             } else if let Some(t) = self.timers.get(self.selected) {
                 let spacious = inside.height >= 20;
                 let gap = if spacious { 2 } else { 1 };
+                let memo_text = wrap_card_text(
+                    &t.memo,
+                    inside.width.saturating_sub(2).min(80).saturating_sub(4),
+                );
                 let memo_height = if t.memo.is_empty() {
                     0
                 } else {
-                    let width = usize::from(inside.width.saturating_sub(4)).max(1);
-                    (Text::from(t.memo.as_str()).width().div_ceil(width) as u16 + 2).min(5)
+                    (memo_text.height() as u16 + 2).min(5)
                 };
                 let parts = Layout::vertical([
                     Constraint::Length(if spacious { 2 } else { 1 }),
@@ -784,14 +788,17 @@ impl App {
                 );
                 if memo_height > 0 {
                     f.render_widget(
-                        Paragraph::new(t.memo.as_str())
-                            .wrap(Wrap { trim: true })
-                            .block(
-                                theme::panel("")
-                                    .title(" memo ")
-                                    .border_style(Style::default().fg(MUTED)),
-                            ),
-                        parts[5],
+                        Paragraph::new(memo_text).block(
+                            theme::panel("")
+                                .title(" memo ")
+                                .border_style(Style::default().fg(MUTED)),
+                        ),
+                        Rect::new(
+                            parts[5].x,
+                            parts[5].y,
+                            parts[5].width.min(80),
+                            parts[5].height,
+                        ),
                     );
                 }
                 let resting = matches!(t.phase(now), Some(("rest", _, _)));
