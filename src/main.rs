@@ -48,6 +48,7 @@ enum Mode {
         name: String,
         duration: String,
         rest: Option<String>,
+        rest_cache: String,
         memo: String,
         field: usize,
         error: String,
@@ -83,6 +84,35 @@ impl App {
     fn key(&mut self, key: KeyEvent) -> bool {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return self.persist();
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('n' | 'p'))
+            && let Mode::Form {
+                stopwatch,
+                rest,
+                rest_cache,
+                field,
+                error,
+                ..
+            } = &mut self.mode
+        {
+            let pomodoro = rest.is_some();
+            let memo_focused = *field == if pomodoro { 3 } else { 2 };
+            let rest_focused = pomodoro && *field == 2;
+            let current = if pomodoro { 2 } else { usize::from(*stopwatch) };
+            let next = (current + if key.code == KeyCode::Char('n') { 1 } else { 2 }) % 3;
+            if let Some(value) = rest.take() {
+                *rest_cache = value;
+            }
+            *stopwatch = next != 0;
+            *rest = (next == 2).then(|| rest_cache.clone());
+            if memo_focused {
+                *field = if next == 2 { 3 } else { 2 };
+            } else if rest_focused && next != 2 {
+                *field = 1;
+            }
+            error.clear();
+            return false;
         }
         if key.code == KeyCode::Char(',')
             && (matches!(self.mode, Mode::Browse)
@@ -165,6 +195,7 @@ impl App {
                         name: String::new(),
                         duration: String::new(),
                         rest: (*selected == 2).then(String::new),
+                        rest_cache: String::new(),
                         memo: String::new(),
                         field: 0,
                         error: String::new(),
@@ -212,6 +243,7 @@ impl App {
                 memo,
                 field,
                 error,
+                ..
             } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
                 KeyCode::Tab | KeyCode::Down => {
@@ -364,6 +396,7 @@ impl App {
                                     format!("{}s", t.seconds)
                                 },
                                 rest: t.rest_seconds.map(|seconds| format!("{seconds}s")),
+                                rest_cache: String::new(),
                                 memo: t.memo.clone(),
                                 field: 0,
                                 error: String::new(),
@@ -883,6 +916,7 @@ impl App {
                 memo,
                 field,
                 error,
+                ..
             } => {
                 let desired_height = if rest.is_some() { 24 } else { 20 };
                 let popup = popup(
@@ -991,7 +1025,13 @@ impl App {
                 let mut lines = vec![];
                 if help.height >= 4 {
                     lines.push(Line::styled(hint, Style::default().fg(MUTED)).centered());
-                    lines.push(Line::default());
+                    lines.push(
+                        Line::from(vec![
+                            Span::styled("ctrl+n / ctrl+p", Style::default().fg(ACCENT).bold()),
+                            Span::styled(" switch type", Style::default().fg(MUTED)),
+                        ])
+                        .centered(),
+                    );
                 }
                 lines.push(if error.is_empty() {
                     Line::styled(
@@ -1189,6 +1229,15 @@ mod tests {
         assert_eq!(saved[0].memo, "stretch");
         press(&mut app, KeyCode::Char('e'));
         assert!(matches!(&app.mode, Mode::Form { rest: Some(rest), .. } if rest == "300s"));
+        for code in [KeyCode::Char('n'), KeyCode::Char('p')] {
+            for _ in 0..3 {
+                app.key(KeyEvent::new(code, KeyModifiers::CONTROL));
+            }
+            assert!(
+                matches!(&app.mode, Mode::Form { stopwatch: true, duration, rest: Some(rest), memo, .. }
+                if duration == "1500s" && rest == "300s" && memo == "stretch")
+            );
+        }
         press(&mut app, KeyCode::Enter);
         assert!(app.timers[0].started.is_none());
         std::fs::remove_file(path).unwrap();
@@ -1471,6 +1520,7 @@ mod tests {
             name: "Focus".into(),
             duration: "25:00".into(),
             rest: None,
+            rest_cache: String::new(),
             memo: "Take a short break afterward".into(),
             field: 1,
             error: String::new(),

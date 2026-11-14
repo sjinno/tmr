@@ -34,6 +34,9 @@ stopwatches start immediately when saved.
 Use `Tab` or `Shift+Tab` to move between fields, `Backspace` to erase,
 `Enter` to save, and `Esc` to cancel. Editing an existing timer or stopwatch
 resets its current run and leaves it ready to start.
+While a form is open, `Ctrl+N` cycles timer → stopwatch → pomodoro, and `Ctrl+P`
+cycles backward. Draft values are preserved, including the Pomodoro rest
+interval when you switch away and back. The selected type is applied on save.
 
 ### durations
 
