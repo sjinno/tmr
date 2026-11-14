@@ -25,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use theme::{ACCENT, BG, MINT, MUTED};
+use theme::{ACCENT, BG, MINT, MUTED, PEACH};
 
 enum Mode {
     Browse,
@@ -36,7 +36,7 @@ enum Mode {
     },
     Clocks,
     Choose {
-        stopwatch: bool,
+        selected: usize,
     },
     Jump {
         number: String,
@@ -47,6 +47,7 @@ enum Mode {
         stopwatch: bool,
         name: String,
         duration: String,
+        rest: Option<String>,
         memo: String,
         field: usize,
         error: String,
@@ -150,19 +151,20 @@ impl App {
                 _ => {}
             },
             Mode::Clocks => unreachable!(),
-            Mode::Choose { stopwatch } => match key.code {
+            Mode::Choose { selected } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
-                KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::BackTab => {
-                    *stopwatch = !*stopwatch
-                }
-                KeyCode::Char('t') => *stopwatch = false,
-                KeyCode::Char('s') => *stopwatch = true,
+                KeyCode::Down | KeyCode::Tab => *selected = (*selected + 1) % 3,
+                KeyCode::Up | KeyCode::BackTab => *selected = (*selected + 2) % 3,
+                KeyCode::Char('t') => *selected = 0,
+                KeyCode::Char('s') => *selected = 1,
+                KeyCode::Char('p') => *selected = 2,
                 KeyCode::Enter => {
                     self.mode = Mode::Form {
                         edit: false,
-                        stopwatch: *stopwatch,
+                        stopwatch: *selected != 0,
                         name: String::new(),
                         duration: String::new(),
+                        rest: (*selected == 2).then(String::new),
                         memo: String::new(),
                         field: 0,
                         error: String::new(),
@@ -206,17 +208,24 @@ impl App {
                 stopwatch,
                 name,
                 duration,
+                rest,
                 memo,
                 field,
                 error,
             } => match key.code {
                 KeyCode::Esc => self.mode = Mode::Browse,
-                KeyCode::Tab | KeyCode::Down => *field = (*field + 1) % 3,
-                KeyCode::BackTab | KeyCode::Up => *field = (*field + 2) % 3,
+                KeyCode::Tab | KeyCode::Down => {
+                    *field = (*field + 1) % if rest.is_some() { 4 } else { 3 }
+                }
+                KeyCode::BackTab | KeyCode::Up => {
+                    *field = (*field + if rest.is_some() { 3 } else { 2 })
+                        % if rest.is_some() { 4 } else { 3 }
+                }
                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                     let text = match *field {
                         0 => name,
                         1 => duration,
+                        2 => rest.as_mut().unwrap_or(memo),
                         _ => memo,
                     };
                     if text.chars().count() < 80 {
@@ -227,28 +236,39 @@ impl App {
                     match *field {
                         0 => name,
                         1 => duration,
+                        2 => rest.as_mut().unwrap_or(memo),
                         _ => memo,
                     }
                     .pop();
                 }
-                KeyCode::Enter => match if *stopwatch && duration.trim().is_empty() {
-                    Ok(0)
-                } else {
-                    parse_duration(duration)
-                } {
+                KeyCode::Enter => match (|| {
+                    let seconds = if *stopwatch && rest.is_none() && duration.trim().is_empty() {
+                        0
+                    } else {
+                        parse_duration(duration).map_err(|e| format!("interval: {e}"))?
+                    };
+                    let rest_seconds = rest
+                        .as_deref()
+                        .map(parse_duration)
+                        .transpose()
+                        .map_err(|e| format!("rest interval: {e}"))?;
+                    Ok::<_, String>((seconds, rest_seconds))
+                })() {
                     Err(e) => *error = e,
-                    Ok(seconds) => {
+                    Ok((seconds, rest_seconds)) => {
                         if *edit {
                             let t = &mut self.timers[self.selected];
                             t.name = name.trim().to_string();
                             t.memo = memo.trim().to_string();
                             t.seconds = seconds;
                             t.stopwatch = *stopwatch;
+                            t.rest_seconds = rest_seconds;
                             t.reset();
                             self.status = "saved. space to start.".into();
                         } else {
                             let mut timer = Timer::new(name.trim().to_string(), seconds);
                             timer.stopwatch = *stopwatch;
+                            timer.rest_seconds = rest_seconds;
                             timer.reset();
                             timer.memo = memo.trim().to_string();
                             timer.toggle(Instant::now());
@@ -302,7 +322,7 @@ impl App {
                     }
                 }
                 KeyCode::Char('q') => return self.persist(),
-                KeyCode::Char('n') => self.mode = Mode::Choose { stopwatch: false },
+                KeyCode::Char('n') => self.mode = Mode::Choose { selected: 0 },
                 KeyCode::Down | KeyCode::Char('j') => {
                     if !self.timers.is_empty() {
                         self.selected = (self.selected + 1) % self.timers.len();
@@ -343,6 +363,7 @@ impl App {
                                 } else {
                                     format!("{}s", t.seconds)
                                 },
+                                rest: t.rest_seconds.map(|seconds| format!("{seconds}s")),
                                 memo: t.memo.clone(),
                                 field: 0,
                                 error: String::new(),
@@ -435,7 +456,9 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let state = if t.finished {
+                let state = if t.started.is_some() && t.rest_seconds.is_some() {
+                    t.phase(now).map(|(phase, _, _)| phase).unwrap_or("run")
+                } else if t.finished {
                     "done"
                 } else if t.started.is_some() {
                     "run"
@@ -450,23 +473,29 @@ impl App {
                     Span::raw(if t.favorite { "★ " } else { "" }),
                     Span::styled(t.label(), Style::default().bold()),
                 ]);
+                let resting = matches!(t.phase(now), Some(("rest", _, _)));
+                let timing_color = if t.started.is_none() {
+                    MUTED
+                } else if resting {
+                    PEACH
+                } else {
+                    MINT
+                };
                 let timing = Line::from(vec![
-                    Span::styled(
-                        t.display(now),
-                        Style::default().fg(if t.started.is_some() { MINT } else { MUTED }),
-                    ),
+                    Span::styled(t.display(now), Style::default().fg(timing_color)),
                     Span::raw("  "),
-                    Span::styled(
-                        state,
-                        Style::default()
-                            .fg(if t.started.is_some() { MINT } else { MUTED })
-                            .bold(),
-                    ),
+                    Span::styled(state, Style::default().fg(timing_color).bold()),
                 ]);
                 let details = Line::from(vec![
                     Span::styled(
-                        if t.stopwatch { "stopwatch" } else { "timer" },
-                        Style::default().fg(if t.stopwatch { MINT } else { ACCENT }),
+                        t.kind_name(),
+                        Style::default().fg(if t.rest_seconds.is_some() {
+                            PEACH
+                        } else if t.stopwatch {
+                            MINT
+                        } else {
+                            ACCENT
+                        }),
                     ),
                     Span::styled(format!(" · {} uses", t.uses), Style::default().fg(MUTED)),
                 ]);
@@ -562,14 +591,19 @@ impl App {
                         .padding(Padding::new(2, 2, 1, 1));
                     let inner = card.inner(bounds);
                     let gauge_width = usize::from(inner.width);
-                    let mut metadata = timer.setting();
+                    let mut metadata = timer.setting(now);
                     if let Some(utc) = timer.started_at {
                         metadata.push_str(&format!(", started_at: {}", format_start_time(utc)));
                     }
+                    let timing_color = if matches!(timer.phase(now), Some(("rest", _, _))) {
+                        PEACH
+                    } else {
+                        ACCENT
+                    };
                     let progress = timer.progress(now);
                     let filled = (progress * gauge_width as f64).round() as usize;
                     let gauge = Line::from(vec![
-                        Span::styled("━".repeat(filled), Style::default().fg(ACCENT)),
+                        Span::styled("━".repeat(filled), Style::default().fg(timing_color)),
                         Span::styled(
                             "─".repeat(gauge_width - filled),
                             Style::default().fg(MUTED).dim(),
@@ -578,7 +612,10 @@ impl App {
                     f.render_widget(
                         Paragraph::new(vec![
                             Line::styled(metadata, Style::default().fg(MUTED)),
-                            Line::styled(timer.display(now), Style::default().fg(ACCENT).bold()),
+                            Line::styled(
+                                timer.display(now),
+                                Style::default().fg(timing_color).bold(),
+                            ),
                             gauge,
                         ])
                         .block(card),
@@ -623,13 +660,25 @@ impl App {
                         parts[5],
                     );
                 }
-                block_clock::render(f, parts[1], &t.display(now), Color::Reset);
+                let resting = matches!(t.phase(now), Some(("rest", _, _)));
+                block_clock::render(
+                    f,
+                    parts[1],
+                    &t.display(now),
+                    if resting { PEACH } else { Color::Reset },
+                );
                 let ratio = t.progress(now);
                 f.render_widget(
                     Gauge::default()
-                        .gauge_style(Style::default().fg(ACCENT).bg(BG))
+                        .gauge_style(
+                            Style::default()
+                                .fg(if resting { PEACH } else { ACCENT })
+                                .bg(BG),
+                        )
                         .ratio(ratio)
-                        .label(if t.finished {
+                        .label(if let Some((phase, _, _)) = t.phase(now) {
+                            phase
+                        } else if t.finished {
                             "complete"
                         } else if t.started.is_some() {
                             "running"
@@ -642,40 +691,67 @@ impl App {
                     .started_at
                     .map(format_start_time)
                     .unwrap_or_else(|| "--:--".into());
-                let duration = if t.stopwatch && t.seconds == 0 {
+                let duration = if let Some((_, _, seconds)) = t.phase(now) {
+                    model::clock(Duration::from_secs(seconds))
+                } else if t.stopwatch && t.seconds == 0 {
                     "off".into()
                 } else {
                     model::clock(Duration::from_secs(t.seconds))
                 };
                 let used = t.uses.to_string();
-                let headers = [
+                let mut headers = vec![
                     "started at",
-                    if t.stopwatch {
+                    if let Some((phase, _, _)) = t.phase(now) {
+                        phase
+                    } else if t.stopwatch {
                         "alert every"
                     } else {
                         "duration"
                     },
                     "used",
                 ];
-                let values = [started.as_str(), duration.as_str(), used.as_str()];
-                let cell_width = headers
+                let completed = t
+                    .completed_work_intervals(now)
+                    .map(|count| count.to_string());
+                let mut values = vec![started.as_str(), duration.as_str(), used.as_str()];
+                if let Some(count) = &completed {
+                    headers.push("intervals");
+                    values.push(count);
+                }
+                let mut cell_width = headers
                     .iter()
                     .chain(values.iter())
                     .map(|cell| cell.len())
                     .max()
                     .unwrap_or(0);
-                let widths = [cell_width; 3];
+                if (cell_width + 3) * headers.len() + 1 > usize::from(parts[6].width)
+                    && completed.is_some()
+                {
+                    headers[0] = "start";
+                    headers[3] = "done";
+                    cell_width = headers
+                        .iter()
+                        .chain(values.iter())
+                        .map(|cell| cell.len())
+                        .max()
+                        .unwrap_or(0);
+                }
+                let widths = vec![cell_width; headers.len()];
                 let border = |left: char, joint: char, right: char| {
-                    let segments = widths.map(|width| "─".repeat(width + 2));
+                    let segments: Vec<_> =
+                        widths.iter().map(|width| "─".repeat(width + 2)).collect();
                     Line::styled(
                         format!("{left}{}{right}", segments.join(&joint.to_string())),
                         Style::default().fg(MUTED),
                     )
                 };
-                let row = |cells: [&str; 3], style: Style| {
+                let row = |cells: &[&str], style: Style| {
                     let mut spans = vec![Span::styled("│", Style::default().fg(MUTED))];
-                    for (cell, width) in cells.into_iter().zip(widths) {
-                        spans.push(Span::styled(format!(" {cell:^width$} "), style));
+                    for (cell, width) in cells.iter().zip(&widths) {
+                        spans.push(Span::styled(
+                            format!(" {cell:^width$} ", width = *width),
+                            style,
+                        ));
                         spans.push(Span::styled("│", Style::default().fg(MUTED)));
                     }
                     Line::from(spans)
@@ -683,9 +759,9 @@ impl App {
                 f.render_widget(
                     Paragraph::new(vec![
                         border('╭', '┬', '╮'),
-                        row(headers, Style::default().fg(MUTED)),
+                        row(&headers, Style::default().fg(MUTED)),
                         border('├', '┼', '┤'),
-                        row(values, Style::default()),
+                        row(&values, Style::default()),
                         border('╰', '┴', '╯'),
                     ])
                     .centered(),
@@ -715,7 +791,7 @@ impl App {
                         ),
                         Line::from("e.g. 5s / 30s / 1m · blank plays the sound once"),
                         Line::from("repeats or trims the sound to the selected duration"),
-                        Line::from("applies to timer and stopwatch alerts"),
+                        Line::from("applies to timer, stopwatch, and pomodoro alerts"),
                         Line::from(""),
                         Line::styled(error.as_str(), Style::default().fg(Color::LightRed)),
                         Line::from("enter save · esc cancel / silence alarm"),
@@ -727,28 +803,30 @@ impl App {
                 );
             }
             Mode::Clocks => unreachable!(),
-            Mode::Choose { stopwatch } => {
-                let popup = popup(area, 50, 6);
-                f.render_widget(Clear, popup);
+            Mode::Choose { selected } => {
+                let bounds = popup(area, 54, 7);
+                f.render_widget(Clear, bounds);
+                let mut lines: Vec<_> = [
+                    "timer · count down",
+                    "stopwatch · count up",
+                    "pomodoro · work and rest",
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(index, label)| {
+                    Line::styled(
+                        format!("{} {label}", if index == *selected { "›" } else { " " }),
+                        Style::default().fg(if index == *selected { ACCENT } else { MUTED }),
+                    )
+                })
+                .collect();
+                lines.push(Line::default());
+                lines.push(Line::from("↑/↓ choose · enter continue · esc cancel"));
                 f.render_widget(
-                    Paragraph::new(vec![
-                        Line::from(Span::styled(
-                            format!("{} timer · count down", if !stopwatch { "›" } else { " " }),
-                            Style::default().fg(if !stopwatch { ACCENT } else { MUTED }),
-                        )),
-                        Line::from(Span::styled(
-                            format!(
-                                "{} stopwatch · count up",
-                                if *stopwatch { "›" } else { " " }
-                            ),
-                            Style::default().fg(if *stopwatch { ACCENT } else { MUTED }),
-                        )),
-                        Line::from(""),
-                        Line::from("↑/↓ choose · enter continue · esc cancel"),
-                    ])
-                    .block(theme::panel("").title(" a little moment "))
-                    .style(Style::default().bg(BG)),
-                    popup,
+                    Paragraph::new(lines)
+                        .block(theme::panel(" a little moment "))
+                        .style(Style::default().bg(BG)),
+                    bounds,
                 );
             }
             Mode::Browse => {}
@@ -780,13 +858,14 @@ impl App {
                 stopwatch,
                 name,
                 duration,
+                rest,
                 memo,
                 field,
                 error,
             } => {
-                let popup = popup(area, 66, 16);
+                let popup = popup(area, 66, if rest.is_some() { 18 } else { 16 });
                 f.render_widget(Clear, popup);
-                let text = vec![
+                let mut text = vec![
                     Line::from(""),
                     Line::from(Span::styled(
                         format!(
@@ -802,7 +881,9 @@ impl App {
                         format!(
                             " {} {:15}  {}",
                             if *field == 1 { "›" } else { " " },
-                            if *stopwatch {
+                            if rest.is_some() {
+                                "interval"
+                            } else if *stopwatch {
                                 "alert every"
                             } else {
                                 "duration"
@@ -811,7 +892,9 @@ impl App {
                         ),
                         Style::default().fg(if *field == 1 { ACCENT } else { Color::Reset }),
                     )),
-                    Line::from(if *stopwatch {
+                    Line::from(if rest.is_some() {
+                        "   required · e.g. 25m / 5m / 30s"
+                    } else if *stopwatch {
                         "   e.g. 5m / 30s · blank disables alerts"
                     } else {
                         "   e.g. 1h / 6m 10s / 100s / 1h30m"
@@ -820,11 +903,19 @@ impl App {
                     Line::from(Span::styled(
                         format!(
                             " {} {:15}  {}",
-                            if *field == 2 { "›" } else { " " },
+                            if *field == if rest.is_some() { 3 } else { 2 } {
+                                "›"
+                            } else {
+                                " "
+                            },
                             "memo (optional)",
                             memo
                         ),
-                        Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
+                        Style::default().fg(if *field == if rest.is_some() { 3 } else { 2 } {
+                            ACCENT
+                        } else {
+                            Color::Reset
+                        }),
                     )),
                     Line::from(""),
                     Line::from(Span::styled(
@@ -833,12 +924,33 @@ impl App {
                     )),
                     Line::from("tab switch · backspace erase · enter save · esc cancel"),
                 ];
+                if let Some(rest) = rest {
+                    text.insert(
+                        6,
+                        Line::styled(
+                            format!(
+                                " {} {:15}  {}",
+                                if *field == 2 { "›" } else { " " },
+                                "rest interval",
+                                rest
+                            ),
+                            Style::default().fg(if *field == 2 { ACCENT } else { Color::Reset }),
+                        ),
+                    );
+                    text.insert(7, Line::default());
+                }
                 f.render_widget(
                     Paragraph::new(text)
                         .wrap(Wrap { trim: false })
                         .block(
                             theme::panel("")
-                                .title(if *stopwatch {
+                                .title(if rest.is_some() {
+                                    if *edit {
+                                        " edit pomodoro · saving resets it "
+                                    } else {
+                                        " new pomodoro "
+                                    }
+                                } else if *stopwatch {
                                     if *edit {
                                         " edit stopwatch · saving resets it "
                                     } else {
@@ -929,7 +1041,9 @@ fn main() -> io::Result<()> {
             let mut completed = Vec::new();
             for t in &mut app.timers {
                 if t.tick(now) {
-                    completed.push(if t.stopwatch {
+                    completed.push(if let Some((phase, _, _)) = t.phase(now) {
+                        format!("{} · {phase} interval started", t.label())
+                    } else if t.stopwatch {
                         format!("{} · interval alert at {}", t.label(), t.display(now))
                     } else {
                         format!("{} · finished", t.label())
@@ -968,6 +1082,65 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pomodoro_requires_both_intervals_and_can_be_edited() {
+        let path = std::env::temp_dir().join(format!(
+            "tmr-pomodoro-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = App {
+            timers: vec![],
+            clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: path.clone(),
+            list: ListState::default(),
+        };
+        let press = |app: &mut App, code| {
+            app.key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        press(&mut app, KeyCode::Char('n'));
+        press(&mut app, KeyCode::Char('p'));
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(&app.mode, Mode::Form { error, .. } if !error.is_empty()));
+        press(&mut app, KeyCode::Tab);
+        for c in "25m".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(&app.mode, Mode::Form { error, .. } if error.starts_with("rest interval"))
+        );
+        press(&mut app, KeyCode::Tab);
+        for c in "5m".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Tab);
+        for c in "stretch".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.timers[0].kind_name(), "pomodoro");
+        assert!(app.timers[0].started.is_some());
+        press(&mut app, KeyCode::Esc);
+        assert!(app.timers[0].started.is_some());
+        let saved = storage::load(&path).unwrap();
+        assert_eq!(saved[0].seconds, 1500);
+        assert_eq!(saved[0].rest_seconds, Some(300));
+        assert_eq!(saved[0].memo, "stretch");
+        press(&mut app, KeyCode::Char('e'));
+        assert!(matches!(&app.mode, Mode::Form { rest: Some(rest), .. } if rest == "300s"));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.timers[0].started.is_none());
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn alarm_settings_save_and_return_to_clocks() {
         let path = std::env::temp_dir().join(format!(
@@ -1245,6 +1418,7 @@ mod tests {
             stopwatch: false,
             name: "Focus".into(),
             duration: "25:00".into(),
+            rest: None,
             memo: "Take a short break afterward".into(),
             field: 1,
             error: String::new(),

@@ -1,6 +1,6 @@
 # tmr
 
-A little terminal app for timers, stopwatches, and world clocks. Built with
+A little terminal app for timers, stopwatches, pomodoros, and world clocks. Built with
 Rust and Ratatui, with block digits, rounded panels, and your terminal's
 background color.
 
@@ -27,7 +27,7 @@ the timer list and **on the clock** panel side by side.
 
 ## timers and stopwatches
 
-Press `n`, choose **timer** or **stopwatch**, and press `Enter` to continue.
+Press `n`, choose **timer**, **stopwatch**, or **pomodoro**, and press `Enter` to continue.
 Names and memos are optional. Names keep the casing you enter. New timers and
 stopwatches start immediately when saved.
 
@@ -61,6 +61,23 @@ toward the next alert. Paused time does not count toward intervals.
 Stopwatches continue running after an interval alert. If several intervals
 pass between updates, one alert covers them. Resetting starts elapsed time
 and the alert schedule over from zero.
+
+### pomodoro
+
+Choose **pomodoro** to alternate work and rest intervals automatically. Both
+**interval** (work) and **rest interval** are required. For example, enter `25m`
+and `5m`. Names and memos are optional, and saving starts the run immediately.
+
+The main display counts total active time upward. The list and gauge show the
+current work or rest phase, and the gauge tracks progress through that phase.
+An alarm plays at each transition. Pausing freezes elapsed time and the phase
+schedule. Resetting returns to the start of a work interval. Intervals and
+memos are saved with the preset, and reopening starts elapsed time at zero.
+The details grid shows completed work intervals under `intervals` (`done` on
+narrow panels). This count increases when work ends, stays fixed during a
+pause, and returns to zero on reset.
+
+Press `Esc` to silence an alarm while the pomodoro or stopwatch keeps running.
 
 ### controls
 

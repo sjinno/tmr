@@ -10,6 +10,8 @@ pub struct Timer {
     pub seconds: u64,
     #[serde(default)]
     pub stopwatch: bool,
+    #[serde(default)]
+    pub rest_seconds: Option<u64>,
     #[serde(skip)]
     alerted_intervals: u64,
     #[serde(default)]
@@ -29,7 +31,7 @@ pub struct Timer {
 impl Timer {
     pub fn label(&self) -> String {
         if self.name.trim().is_empty() && self.stopwatch {
-            "stopwatch".into()
+            self.kind_name().into()
         } else if self.name.trim().is_empty() {
             format!("{} timer", clock(Duration::from_secs(self.seconds)))
         } else {
@@ -42,6 +44,7 @@ impl Timer {
             memo: String::new(),
             seconds,
             stopwatch: false,
+            rest_seconds: None,
             alerted_intervals: 0,
             uses: 0,
             favorite: false,
@@ -69,7 +72,39 @@ impl Timer {
             value
         })
     }
+    pub fn kind_name(&self) -> &'static str {
+        if self.rest_seconds.is_some() {
+            "pomodoro"
+        } else if self.stopwatch {
+            "stopwatch"
+        } else {
+            "timer"
+        }
+    }
+    /// Current phase, active elapsed time within it, and its duration.
+    pub fn phase(&self, now: Instant) -> Option<(&'static str, Duration, u64)> {
+        let rest = self.rest_seconds?;
+        let position = self.left(now).as_secs_f64() % (self.seconds + rest) as f64;
+        if position < self.seconds as f64 {
+            Some(("work", Duration::from_secs_f64(position), self.seconds))
+        } else {
+            Some((
+                "rest",
+                Duration::from_secs_f64(position - self.seconds as f64),
+                rest,
+            ))
+        }
+    }
+    pub fn completed_work_intervals(&self, now: Instant) -> Option<u64> {
+        let rest = self.rest_seconds?;
+        let elapsed = self.left(now).as_secs();
+        let cycle = self.seconds + rest;
+        Some(elapsed / cycle + u64::from(elapsed % cycle >= self.seconds))
+    }
     pub fn progress(&self, now: Instant) -> f64 {
+        if let Some((_, elapsed, seconds)) = self.phase(now) {
+            return elapsed.as_secs_f64() / seconds as f64;
+        }
         if self.seconds == 0 {
             return 0.0;
         }
@@ -80,7 +115,15 @@ impl Timer {
             (1.0 - elapsed / self.seconds as f64).clamp(0.0, 1.0)
         }
     }
-    pub fn setting(&self) -> String {
+    pub fn setting(&self, now: Instant) -> String {
+        if let Some((phase, elapsed, seconds)) = self.phase(now) {
+            return format!(
+                "{phase} · next in {} · work {} / rest {}",
+                clock(Duration::from_secs(seconds).saturating_sub(elapsed)),
+                clock(Duration::from_secs(self.seconds)),
+                clock(Duration::from_secs(self.rest_seconds.unwrap_or(0)))
+            );
+        }
         if !self.stopwatch {
             format!("duration: {}", clock(Duration::from_secs(self.seconds)))
         } else if self.seconds == 0 {
@@ -119,6 +162,19 @@ impl Timer {
         }
     }
     pub fn tick(&mut self, now: Instant) -> bool {
+        if let Some(rest) = self.rest_seconds {
+            if self.started.is_some() {
+                let elapsed = self.left(now).as_secs();
+                let cycle = self.seconds + rest;
+                let transitions =
+                    (elapsed / cycle) * 2 + u64::from(elapsed % cycle >= self.seconds);
+                if transitions > self.alerted_intervals {
+                    self.alerted_intervals = transitions;
+                    return true;
+                }
+            }
+            return false;
+        }
         if self.stopwatch {
             if self.started.is_some() && self.seconds > 0 {
                 let intervals = self.left(now).as_secs() / self.seconds;
@@ -216,6 +272,63 @@ pub fn clock(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pomodoro_alternates_without_resetting_elapsed_time() {
+        let now = Instant::now();
+        let mut timer = Timer::new("focus".into(), 30);
+        timer.stopwatch = true;
+        timer.rest_seconds = Some(10);
+        timer.reset();
+        timer.toggle(now);
+        assert_eq!(timer.phase(now).unwrap().0, "work");
+        assert!(!timer.tick(now + Duration::from_secs(29)));
+        assert_eq!(
+            timer.completed_work_intervals(now + Duration::from_secs(29)),
+            Some(0)
+        );
+        assert!(timer.tick(now + Duration::from_secs(30)));
+        assert_eq!(
+            timer.completed_work_intervals(now + Duration::from_secs(30)),
+            Some(1)
+        );
+        assert_eq!(
+            timer.phase(now + Duration::from_secs(30)).unwrap().0,
+            "rest"
+        );
+        assert!(!timer.tick(now + Duration::from_secs(30)));
+        assert!(timer.tick(now + Duration::from_secs(40)));
+        assert_eq!(
+            timer.completed_work_intervals(now + Duration::from_secs(40)),
+            Some(1)
+        );
+        assert_eq!(
+            timer.phase(now + Duration::from_secs(40)).unwrap().0,
+            "work"
+        );
+        timer.toggle(now + Duration::from_secs(45));
+        assert!(!timer.tick(now + Duration::from_secs(99)));
+        assert_eq!(timer.display(now + Duration::from_secs(99)), "00:45");
+        timer.toggle(now + Duration::from_secs(100));
+        assert!(!timer.tick(now + Duration::from_secs(124)));
+        assert!(timer.tick(now + Duration::from_secs(125)));
+        assert_eq!(
+            timer.phase(now + Duration::from_secs(125)).unwrap().0,
+            "rest"
+        );
+        assert_eq!(timer.display(now + Duration::from_secs(125)), "01:10");
+        assert_eq!(
+            timer.completed_work_intervals(now + Duration::from_secs(125)),
+            Some(2)
+        );
+        assert_eq!(timer.uses, 1);
+        assert!(timer.tick(now + Duration::from_secs(1000)));
+        assert!(!timer.tick(now + Duration::from_secs(1000)));
+        assert!(timer.started.is_some());
+        timer.reset();
+        assert_eq!(timer.display(now), "00:00");
+        assert_eq!(timer.completed_work_intervals(now), Some(0));
+        assert_eq!(timer.phase(now).unwrap().0, "work");
+    }
     #[test]
     fn stopwatch_intervals_follow_active_time() {
         let now = Instant::now();

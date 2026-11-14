@@ -23,6 +23,11 @@ pub fn load(path: &Path) -> io::Result<Vec<Timer>> {
         if (!timer.stopwatch && timer.seconds == 0) || timer.seconds > 999 * 3600 {
             return Err(io::Error::other("invalid saved timer"));
         }
+        if let Some(rest) = timer.rest_seconds
+            && (!timer.stopwatch || timer.seconds == 0 || rest == 0 || rest > 999 * 3600)
+        {
+            return Err(io::Error::other("invalid pomodoro intervals"));
+        }
         timer.reset();
     }
     Ok(timers)
