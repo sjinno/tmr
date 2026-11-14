@@ -64,6 +64,8 @@ toward the next alert. Paused time does not count toward intervals.
 Stopwatches continue running after an interval alert. If several intervals
 pass between updates, one alert covers them. Resetting starts elapsed time
 and the alert schedule over from zero.
+The details table counts completed alert intervals under `laps`. Paused time
+is excluded, and resetting clears the count. With alerts disabled it shows `--`.
 
 ### pomodoro
 

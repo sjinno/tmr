@@ -760,6 +760,14 @@ impl App {
                     headers.insert(2, "rest");
                     values.insert(2, rest);
                 }
+                let laps = t
+                    .completed_laps(now)
+                    .map(|count| count.to_string())
+                    .unwrap_or_else(|| "--".into());
+                if t.stopwatch && t.rest_seconds.is_none() {
+                    headers.insert(headers.len() - 1, "laps");
+                    values.insert(values.len() - 1, &laps);
+                }
                 if let Some(count) = &completed {
                     headers.insert(headers.len() - 1, "intervals");
                     values.insert(values.len() - 1, count);
@@ -770,12 +778,15 @@ impl App {
                     .map(|cell| cell.len())
                     .max()
                     .unwrap_or(0);
-                if (cell_width + 3) * headers.len() + 1 > usize::from(parts[6].width)
-                    && completed.is_some()
+                if (cell_width + 3) * headers.len() + 1 > usize::from(parts[6].width) && t.stopwatch
                 {
                     headers[0] = "start";
-                    let intervals_column = headers.len() - 2;
-                    headers[intervals_column] = "done";
+                    if completed.is_some() {
+                        let intervals_column = headers.len() - 2;
+                        headers[intervals_column] = "done";
+                    } else {
+                        headers[1] = "alert";
+                    }
                     cell_width = headers
                         .iter()
                         .chain(values.iter())

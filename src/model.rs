@@ -107,6 +107,13 @@ impl Timer {
         let cycle = self.seconds + rest;
         Some(elapsed / cycle + u64::from(elapsed % cycle >= self.seconds))
     }
+    pub fn completed_laps(&self, now: Instant) -> Option<u64> {
+        if self.stopwatch && self.rest_seconds.is_none() && self.seconds > 0 {
+            Some(self.left(now).as_secs() / self.seconds)
+        } else {
+            None
+        }
+    }
     pub fn progress(&self, now: Instant) -> f64 {
         if let Some((_, elapsed, seconds)) = self.phase(now) {
             return elapsed.as_secs_f64() / seconds as f64;
@@ -347,15 +354,25 @@ mod tests {
         watch.reset();
         watch.toggle(now);
         assert_eq!(watch.display(now), "00:00");
+        assert_eq!(watch.completed_laps(now), Some(0));
         assert!(!watch.tick(now + Duration::from_secs(29)));
         assert!(watch.tick(now + Duration::from_secs(30)));
+        assert_eq!(watch.completed_laps(now + Duration::from_secs(30)), Some(1));
         assert!(!watch.tick(now + Duration::from_secs(30)));
         watch.toggle(now + Duration::from_secs(35));
         assert!(!watch.tick(now + Duration::from_secs(100)));
+        assert_eq!(
+            watch.completed_laps(now + Duration::from_secs(100)),
+            Some(1)
+        );
         watch.toggle(now + Duration::from_secs(100));
         assert_eq!(watch.display(now + Duration::from_secs(100)), "00:35");
         assert_eq!(watch.uses, 1);
         assert!(watch.tick(now + Duration::from_secs(125)));
+        assert_eq!(
+            watch.completed_laps(now + Duration::from_secs(125)),
+            Some(2)
+        );
         // A delayed frame coalesces missed intervals into one alert.
         assert!(watch.tick(now + Duration::from_secs(300)));
         assert!(!watch.tick(now + Duration::from_secs(300)));
@@ -369,6 +386,7 @@ mod tests {
         watch.reset();
         watch.toggle(now);
         assert!(!watch.tick(now + Duration::from_secs(3600)));
+        assert_eq!(watch.completed_laps(now + Duration::from_secs(3600)), None);
         assert_eq!(watch.display(now + Duration::from_secs(3600)), "01:00:00");
     }
     #[test]
