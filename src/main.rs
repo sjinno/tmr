@@ -584,20 +584,108 @@ impl App {
                 let [summary, list] = Layout::vertical([Constraint::Length(2), Constraint::Min(0)])
                     .horizontal_margin(1)
                     .areas(inside);
+                struct Card<'a> {
+                    index: usize,
+                    timer: &'a Timer,
+                    details: Text<'static>,
+                    memo: Text<'static>,
+                    height: u16,
+                }
+                let content_width = list.width.saturating_sub(6);
                 let active: Vec<_> = self
                     .timers
                     .iter()
                     .enumerate()
                     .filter(|(_, timer)| timer.started.is_some())
+                    .map(|(index, timer)| {
+                        let mut details = vec![format!(
+                            "started at: {}",
+                            timer
+                                .started_at
+                                .map(format_start_time)
+                                .unwrap_or_else(|| "--:--".into())
+                        )];
+                        if let Some(rest) = timer.rest_seconds {
+                            if let Some((phase, _, _)) = timer.phase(now) {
+                                details.push(format!("phase: {phase}"));
+                            }
+                            details.push(format!(
+                                "work: {}",
+                                model::clock(Duration::from_secs(timer.seconds))
+                            ));
+                            details
+                                .push(format!("rest: {}", model::clock(Duration::from_secs(rest))));
+                            details.push(format!(
+                                "intervals: {}",
+                                timer.completed_work_intervals(now).unwrap_or(0)
+                            ));
+                        } else if timer.stopwatch {
+                            details.push(if timer.seconds == 0 {
+                                "alert: off".into()
+                            } else {
+                                format!(
+                                    "alert: {}",
+                                    model::clock(Duration::from_secs(timer.seconds))
+                                )
+                            });
+                            details.push(format!(
+                                "laps: {}",
+                                timer
+                                    .completed_laps(now)
+                                    .map(|count| count.to_string())
+                                    .unwrap_or_else(|| "--".into())
+                            ));
+                        } else {
+                            details.push(format!(
+                                "duration: {}",
+                                model::clock(Duration::from_secs(timer.seconds))
+                            ));
+                        }
+                        details.push(format!("used: {}", timer.uses));
+                        let details = wrap_card_text(&details.join(" · "), content_width);
+                        let memo =
+                            wrap_card_text(&timer.memo, content_width.saturating_sub(4));
+                        let memo_height = if timer.memo.is_empty() {
+                            0
+                        } else {
+                            memo.height() as u16 + 3
+                        };
+                        let height = 6 + details.height() as u16 + memo_height;
+                        Card {
+                            index,
+                            timer,
+                            details,
+                            memo,
+                            height,
+                        }
+                    })
                     .collect();
-                const BOX_HEIGHT: u16 = 7;
-                const BOX_STRIDE: u16 = BOX_HEIGHT + 1;
-                let capacity = usize::from((list.height.saturating_add(1) / BOX_STRIDE).max(1));
-                let selected = active.iter().position(|(index, _)| *index == self.selected);
-                let first = selected.unwrap_or(0) / capacity * capacity;
-                let end = (first + capacity).min(running);
-                let heading = if end - first < running {
-                    format!("{running} running · showing {}–{end}", first + 1)
+                let selected = active
+                    .iter()
+                    .position(|card| card.index == self.selected)
+                    .unwrap_or(0);
+                let mut pages = Vec::new();
+                let mut first = 0;
+                let mut used_height = 0;
+                for (index, card) in active.iter().enumerate() {
+                    if index > first && used_height + 1 + card.height > list.height {
+                        pages.push(first..index);
+                        first = index;
+                        used_height = 0;
+                    }
+                    used_height += u16::from(index > first) + card.height;
+                }
+                pages.push(first..active.len());
+                let page = pages
+                    .iter()
+                    .find(|page| page.contains(&selected))
+                    .expect("selected running card");
+                let heading = if page.len() < running {
+                    format!(
+                        "{running} running · showing {}–{}",
+                        page.start + 1,
+                        page.end
+                    )
                 } else {
                     format!("{running} running")
                 };
@@ -605,57 +693,68 @@ impl App {
                     Paragraph::new(heading).style(Style::default().fg(MUTED)),
                     summary,
                 );
-                for (row, &(index, timer)) in active[first..end].iter().enumerate() {
+                let mut y = list.y;
+                for card in &active[page.clone()] {
                     let bounds = Rect::new(
                         list.x,
-                        list.y + row as u16 * BOX_STRIDE,
+                        y,
                         list.width,
-                        BOX_HEIGHT.min(list.height),
+                        card.height.min(list.bottom().saturating_sub(y)),
                     );
-                    let border = if index == self.selected {
-                        ACCENT
-                    } else {
-                        MUTED
-                    };
-                    let card = theme::panel("")
-                        .title(Line::styled(
-                            format!(" #{:02} {} ", index + 1, timer.label()),
-                            Style::default().bold(),
-                        ))
-                        .border_style(Style::default().fg(border))
+                    let timer = card.timer;
+                    let panel = theme::panel(format!(" #{:02} {} ", card.index + 1, timer.label()))
+                        .border_style(Style::default().fg(if card.index == self.selected {
+                            ACCENT
+                        } else {
+                            MUTED
+                        }))
                         .padding(Padding::new(2, 2, 1, 1));
-                    let inner = card.inner(bounds);
-                    let gauge_width = usize::from(inner.width);
-                    let mut metadata = timer.setting(now);
-                    if let Some(utc) = timer.started_at {
-                        metadata.push_str(&format!(", started_at: {}", format_start_time(utc)));
-                    }
-                    let timing_color = if matches!(timer.phase(now), Some(("rest", _, _))) {
+                    let inner = panel.inner(bounds);
+                    f.render_widget(panel, bounds);
+                    let memo_height = if timer.memo.is_empty() {
+                        0
+                    } else {
+                        card.memo.height() as u16 + 2
+                    };
+                    let [details, countdown, gauge, _, memo] = Layout::vertical([
+                        Constraint::Length(card.details.height() as u16),
+                        Constraint::Length(1),
+                        Constraint::Length(1),
+                        Constraint::Length(u16::from(memo_height > 0)),
+                        Constraint::Length(memo_height),
+                    ])
+                    .areas(inner);
+                    f.render_widget(
+                        Paragraph::new(card.details.clone()).style(Style::default().fg(MUTED)),
+                        details,
+                    );
+                    let color = if matches!(timer.phase(now), Some(("rest", _, _))) {
                         PEACH
                     } else {
                         ACCENT
                     };
-                    let progress = timer.progress(now);
-                    let filled = (progress * gauge_width as f64).round() as usize;
-                    let gauge = Line::from(vec![
-                        Span::styled("━".repeat(filled), Style::default().fg(timing_color)),
-                        Span::styled(
-                            "─".repeat(gauge_width - filled),
-                            Style::default().fg(MUTED).dim(),
-                        ),
-                    ]);
                     f.render_widget(
-                        Paragraph::new(vec![
-                            Line::styled(metadata, Style::default().fg(MUTED)),
-                            Line::styled(
-                                timer.display(now),
-                                Style::default().fg(timing_color).bold(),
-                            ),
-                            gauge,
-                        ])
-                        .block(card),
-                        bounds,
+                        Paragraph::new(timer.display(now)).style(Style::default().fg(color).bold()),
+                        countdown,
                     );
+                    let filled = (timer.progress(now) * f64::from(gauge.width)).round() as usize;
+                    f.render_widget(
+                        Paragraph::new(Line::from(vec![
+                            Span::styled("━".repeat(filled), Style::default().fg(color)),
+                            Span::styled(
+                                "─".repeat(usize::from(gauge.width) - filled),
+                                Style::default().fg(MUTED).dim(),
+                            ),
+                        ])),
+                        gauge,
+                    );
+                    if memo_height > 0 {
+                        f.render_widget(
+                            Paragraph::new(card.memo.clone()).block(theme::panel(" memo ")),
+                            memo,
+                        );
+                    }
+                    y = bounds.bottom().saturating_add(1);
                 }
             } else if let Some(t) = self.timers.get(self.selected) {
                 let spacious = inside.height >= 20;
@@ -1092,6 +1191,34 @@ impl App {
         }
     }
 }
+fn wrap_card_text(text: &str, width: u16) -> Text<'static> {
+    let width = usize::from(width).max(1);
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if !line.is_empty() {
+            if Span::raw(line.as_str()).width() + 1 + Span::raw(word).width() > width {
+                lines.push(Line::from(std::mem::take(&mut line)));
+            } else {
+                line.push(' ');
+            }
+        }
+        for character in word.chars() {
+            if !line.is_empty()
+                && Span::raw(line.as_str()).width() + Span::raw(character.to_string()).width()
+                    > width
+            {
+                lines.push(Line::from(std::mem::take(&mut line)));
+            }
+            line.push(character);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(Line::from(line));
+    }
+    Text::from(lines)
+}
+
 fn format_start_time(utc: time::OffsetDateTime) -> String {
     let (started_at, zone) = match time::UtcOffset::local_offset_at(utc) {
         Ok(offset) => (utc.to_offset(offset), ""),
@@ -1186,6 +1313,61 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn running_cards_show_full_details_and_memo_below_gauge() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut pomodoro = Timer::new("focus".into(), 1500);
+        pomodoro.stopwatch = true;
+        pomodoro.rest_seconds = Some(300);
+        pomodoro.memo = "stretch gently".into();
+        pomodoro.reset();
+        pomodoro.toggle(Instant::now());
+        let mut watch = Timer::new("laps".into(), 30);
+        watch.stopwatch = true;
+        watch.reset();
+        watch.toggle(Instant::now());
+        let mut app = App {
+            timers: vec![pomodoro, watch],
+            clocks: world_clock::WorldClocks::default(),
+            settings: settings::Settings::default(),
+            selected: 0,
+            mode: Mode::Browse,
+            status: String::new(),
+            path: PathBuf::new(),
+            list: ListState::default(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(140, 60)).unwrap();
+        terminal.draw(|f| app.draw(f)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = (0..60)
+            .map(|y| {
+                (50..139)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        for label in [
+            "work:",
+            "rest:",
+            "intervals:",
+            "laps:",
+            "used:",
+            "memo",
+            "stretch gently",
+        ] {
+            assert!(text.contains(label), "missing {label}");
+        }
+        let gauge_row = text
+            .lines()
+            .position(|line| line.contains('─') && line.contains("│") && !line.contains('╭'))
+            .unwrap();
+        let memo_row = text.lines().position(|line| line.contains("memo")).unwrap();
+        assert!(memo_row > gauge_row);
+        app.selected = 1;
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal.draw(|f| app.draw(f)).unwrap();
+    }
     #[test]
     fn pomodoro_requires_both_intervals_and_can_be_edited() {
         let path = std::env::temp_dir().join(format!(

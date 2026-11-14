@@ -128,26 +128,6 @@ impl Timer {
             (value / self.seconds as f64).clamp(0.0, 1.0)
         }
     }
-    pub fn setting(&self, now: Instant) -> String {
-        if let Some((phase, elapsed, seconds)) = self.phase(now) {
-            return format!(
-                "{phase} · next in {} · work {} / rest {}",
-                clock(Duration::from_secs(seconds).saturating_sub(elapsed)),
-                clock(Duration::from_secs(self.seconds)),
-                clock(Duration::from_secs(self.rest_seconds.unwrap_or(0)))
-            );
-        }
-        if !self.stopwatch {
-            format!("duration: {}", clock(Duration::from_secs(self.seconds)))
-        } else if self.seconds == 0 {
-            "stopwatch · alerts off".into()
-        } else {
-            format!(
-                "stopwatch · alert every {}",
-                clock(Duration::from_secs(self.seconds))
-            )
-        }
-    }
     pub fn reset(&mut self) {
         self.remaining = if self.stopwatch {
             Duration::ZERO

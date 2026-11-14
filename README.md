@@ -111,6 +111,9 @@ interval, and usage count. Start times use local hours and minutes, with UTC
 as a fallback. Resetting clears the start time.
 
 When multiple items are running, the panel shows their individual cards.
+Each card keeps its details inline, wrapping as needed, including usage and
+lap or completed work-interval counts. A memo appears in its own labeled box
+below the gauge. Cards grow to fit their contents.
 Selecting a running item brings its card into view if the cards overflow.
 
 ## world clocks
