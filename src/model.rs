@@ -114,11 +114,11 @@ impl Timer {
         if self.seconds == 0 {
             return 0.0;
         }
-        let elapsed = self.left(now).as_secs_f64();
+        let value = self.left(now).as_secs_f64();
         if self.stopwatch {
-            (elapsed % self.seconds as f64) / self.seconds as f64
+            (value % self.seconds as f64) / self.seconds as f64
         } else {
-            (1.0 - elapsed / self.seconds as f64).clamp(0.0, 1.0)
+            (value / self.seconds as f64).clamp(0.0, 1.0)
         }
     }
     pub fn setting(&self, now: Instant) -> String {
@@ -435,12 +435,15 @@ mod tests {
         let now = Instant::now();
         let mut t = Timer::new("Tea".into(), 10);
         t.toggle(now);
+        assert_eq!(t.progress(now), 1.0);
         t.toggle(now + Duration::from_secs(3));
         assert_eq!(t.remaining.as_secs(), 7);
+        assert_eq!(t.progress(now + Duration::from_secs(3)), 0.7);
         t.toggle(now + Duration::from_secs(8));
         assert_eq!(t.uses, 1);
         assert!(!t.tick(now + Duration::from_secs(14)));
         assert!(t.tick(now + Duration::from_secs(15)));
+        assert_eq!(t.progress(now + Duration::from_secs(15)), 0.0);
         assert_eq!(t.display(now + Duration::from_secs(15)), "fin");
         assert!(!t.tick(now + Duration::from_secs(16)));
         t.toggle(now + Duration::from_secs(17));
