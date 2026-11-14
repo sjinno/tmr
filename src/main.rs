@@ -539,7 +539,14 @@ impl App {
                     .enumerate()
                     .map(|(row, text)| {
                         let mut spans = vec![
-                            Span::styled(id[row].clone(), Style::default().fg(ACCENT)),
+                            Span::styled(
+                                id[row].clone(),
+                                Style::default().fg(if i == self.selected {
+                                    ACCENT
+                                } else {
+                                    MUTED
+                                }),
+                            ),
                             Span::raw("  "),
                         ];
                         spans.extend(text.spans);
