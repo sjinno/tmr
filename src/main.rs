@@ -25,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use theme::{ACCENT, BG, MINT, MUTED, PEACH};
+use theme::{ACCENT, BG, BLUE, MINT, MUTED, PEACH};
 
 enum Mode {
     Browse,
@@ -529,7 +529,7 @@ impl App {
                         } else if t.stopwatch {
                             MINT
                         } else {
-                            ACCENT
+                            BLUE
                         }),
                     ),
                     Span::styled(format!(" · {} uses", t.uses), Style::default().fg(MUTED)),

@@ -7,6 +7,7 @@ use ratatui::{
 pub const ACCENT: Color = Color::Rgb(196, 181, 253);
 pub const MINT: Color = Color::Rgb(159, 219, 191);
 pub const PEACH: Color = Color::Rgb(250, 190, 155);
+pub const BLUE: Color = Color::Rgb(137, 190, 245);
 pub const MUTED: Color = Color::Rgb(151, 158, 178);
 pub const BG: Color = Color::Reset;
 
